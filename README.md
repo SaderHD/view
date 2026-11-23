@@ -7,7 +7,7 @@ A personal, calendar-first job organizer for Android, built on Outlook calendar 
 - Set work hours week by week
 - Type in a job and get the best open time slots
 
-**Status:** Phase 3: Outlook calendar, jobs with OneDrive folders and uploads, week-by-week work hours, and smart scheduling (type a job → best open slots → one-tap booking).
+**Status:** Phase 4: Outlook calendar, jobs with OneDrive folders and uploads, week-by-week work hours, smart scheduling, and search across jobs, customers, addresses and files.
 
 - **[docs/SETUP.md](docs/SETUP.md)**: get it running on your phone (start here)
 - **[PLAN.md](PLAN.md)**: full plan, architecture and roadmap
@@ -26,5 +26,5 @@ npm run dev
 | `npm run dev:demo` | Same, with fake calendar data and no Microsoft sign-in (for testing) |
 | `npm run build` | Type-check and build to `dist/` (`BASE_PATH=/view/` for GitHub Pages) |
 | `npm run lint` | Lint |
-| `npm test` | Unit tests (work hours + scheduling engine) |
+| `npm test` | Unit tests (work hours, scheduling engine, search) |
 | `node scripts/make-icons.mjs` | Regenerate PNG app icons from `public/favicon.svg` |

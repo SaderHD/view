@@ -4,12 +4,12 @@ import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 import { DaySheet } from '../calendar/DaySheet'
 import { EventDetail } from '../calendar/EventDetail'
 import { EventForm } from '../calendar/EventForm'
 import { eventClasses, eventToDraft } from '../calendar/eventDisplay'
-import { addDays, fmtTime, nextHalfHour, startOfDay } from '../calendar/time'
+import { addDays, dateKey, fmtTime, nextHalfHour, startOfDay, toDate } from '../calendar/time'
 import type { CalEvent, EventDraft } from '../calendar/types'
 import { useCalendarData, type SyncStatus } from '../calendar/useCalendarData'
 import { Icon } from '../components/Sheet'
@@ -18,20 +18,26 @@ import { getEventNotes } from '../graph/calendar'
 import type { DriveRef } from '../graph/drive'
 import { getJob, makeJob, removeJob, saveJob } from '../graph/jobs'
 import { newJobId } from '../jobs/types'
-import { DrivePicker } from '../jobs/DrivePicker'
-import { FilesSheet } from '../jobs/FilesSheet'
+import { renameItem } from '../graph/drive'
+import { haptic } from '../lib/haptics'
 import { JobSection } from '../jobs/JobSection'
-import { MakeJobSheet } from '../jobs/MakeJobSheet'
 import type { JobInfo } from '../jobs/types'
 import { startQueue, useUploadQueue } from '../uploads/queue'
-import { ShareSheet } from '../uploads/ShareSheet'
-import { UploadQueueSheet } from '../uploads/UploadQueueSheet'
-import { FindTimeSheet, type JobDetails } from '../schedule/FindTimeSheet'
+import type { JobDetails } from '../schedule/FindTimeSheet'
 import { offHoursEvents } from '../schedule/offHours'
 import type { Suggestion } from '../schedule/scheduler'
-import { WorkHoursSheet } from '../schedule/WorkHoursSheet'
 import { loadSettings, useSettings } from '../settings/store'
-import { SettingsSheet } from './SettingsSheet'
+
+// Less-used screens load on first use (they're cached for offline after that).
+const DrivePicker = lazy(() => import('../jobs/DrivePicker').then((m) => ({ default: m.DrivePicker })))
+const FilesSheet = lazy(() => import('../jobs/FilesSheet').then((m) => ({ default: m.FilesSheet })))
+const MakeJobSheet = lazy(() => import('../jobs/MakeJobSheet').then((m) => ({ default: m.MakeJobSheet })))
+const ShareSheet = lazy(() => import('../uploads/ShareSheet').then((m) => ({ default: m.ShareSheet })))
+const UploadQueueSheet = lazy(() => import('../uploads/UploadQueueSheet').then((m) => ({ default: m.UploadQueueSheet })))
+const WorkHoursSheet = lazy(() => import('../schedule/WorkHoursSheet').then((m) => ({ default: m.WorkHoursSheet })))
+const FindTimeSheet = lazy(() => import('../schedule/FindTimeSheet').then((m) => ({ default: m.FindTimeSheet })))
+const SettingsSheet = lazy(() => import('./SettingsSheet').then((m) => ({ default: m.SettingsSheet })))
+const SearchSheet = lazy(() => import('../search/SearchSheet').then((m) => ({ default: m.SearchSheet })))
 
 type SheetState =
   | { kind: 'day'; date: Date }
@@ -47,6 +53,7 @@ type SheetState =
   | { kind: 'share' }
   | { kind: 'hours'; date?: Date }
   | { kind: 'findTime'; date?: Date }
+  | { kind: 'search'; jobsOnly?: boolean }
 
 const VIEWS = [
   { id: 'dayGridMonth', label: 'Month' },
@@ -86,7 +93,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   const uploads = useUploadQueue()
   const { settings } = useSettings()
   const [fabOpen, setFabOpen] = useState(false)
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null)
+  const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => Promise<void> } } | null>(null)
   const [title, setTitle] = useState('')
   const [view, setView] = useState<ViewId>(savedView)
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null)
@@ -117,7 +124,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   const showToast = useCallback((text: string, error = false) => setToast({ text, error }), [setToast])
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), toast.error ? 7000 : 3500)
+    const t = setTimeout(() => setToast(null), toast.action ? 12000 : toast.error ? 7000 : 3500)
     return () => clearTimeout(t)
   }, [toast])
 
@@ -148,8 +155,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     }
   }
 
-  function openEvent(id: string) {
-    pushSheet({ kind: 'event', id, snapshot: events.find((e) => e.id === id) })
+  function openEvent(id: string, snapshot?: CalEvent) {
+    pushSheet({ kind: 'event', id, snapshot: snapshot ?? events.find((e) => e.id === id) })
     void loadNotes(id)
     // Fresh job info (also covers events loaded while offline).
     getJob(id).then(
@@ -180,7 +187,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     () => [
       ...events.map((e) => ({
         id: e.id,
-        title: e.title,
+        title: e.job && (e.job.status === 'done' || e.job.status === 'invoiced') ? `✓ ${e.title}` : e.title,
         start: e.start,
         end: e.end,
         allDay: e.allDay,
@@ -221,6 +228,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         await setJob(ev.id, r.job, r.categories)
       }
       api()?.gotoDate(parts[0].start)
+      haptic(20)
       showToast(parts.length > 1 ? `Booked ${parts.length} parts with one job folder.` : 'Job booked and folder created.')
     } catch (err) {
       showToast(`Booked in Outlook, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -266,6 +274,36 @@ export function CalendarScreen({ name, username }: { name: string; username: str
 
   const eventById = (id: string) => events.find((e) => e.id === id)
 
+  /**
+   * A job moved to another date and its folder name starts with the old
+   * date ("2026-11-24 - Smith - …")? Offer to rename the folder to match.
+   */
+  function offerFolderRename(before: CalEvent | undefined, after: CalEvent) {
+    const folder = before?.job?.folder
+    if (!before?.job || !folder) return
+    const oldKey = dateKey(toDate(before.start))
+    const newKey = dateKey(toDate(after.start))
+    if (oldKey === newKey || !folder.name.startsWith(oldKey)) return
+    const newName = newKey + folder.name.slice(oldKey.length)
+    setToast({
+      text: `Job moved to ${newKey}. Rename its folder to match?`,
+      action: {
+        label: 'Rename folder',
+        run: async () => {
+          const renamed = await renameItem(folder.driveId, folder.itemId, newName)
+          const job = eventById(after.id)?.job ?? before.job
+          if (job) {
+            const updated = { ...job, folder: { ...folder, name: renamed.name, webUrl: renamed.webUrl } }
+            await saveJob(after.id, updated, true)
+            await setJob(after.id, updated)
+          }
+          haptic()
+          showToast(`Folder renamed to "${renamed.name}".`)
+        },
+      },
+    })
+  }
+
   function renderSheet(sheet: SheetState) {
     switch (sheet.kind) {
       case 'day':
@@ -300,6 +338,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
             }}
             onDelete={async () => {
               await remove(ev.id)
+              haptic()
               closeSheet()
             }}
             extra={
@@ -337,7 +376,10 @@ export function CalendarScreen({ name, username }: { name: string; username: str
                   })
                 }
                 onRemoveLink={(link) => updateJob(ev, { links: (ev.job?.links ?? []).filter((l) => l.itemId !== link.itemId) })}
-                onStatus={(status) => updateJob(ev, { status })}
+                onStatus={async (status) => {
+                  await updateJob(ev, { status })
+                  haptic()
+                }}
                 onRemoveJob={async () => {
                   await removeJob(ev)
                   await setJob(ev.id, null, ev.categories.filter((c) => c.toLowerCase() !== 'job'))
@@ -377,9 +419,12 @@ export function CalendarScreen({ name, username }: { name: string; username: str
             notesEditable={sheet.notesEditable}
             onClose={closeSheet}
             onSave={async (draft, notesChanged) => {
-              await update(sheet.id, draft, notesChanged)
+              const before = eventById(sheet.id)
+              const saved = await update(sheet.id, draft, notesChanged)
               if (notesChanged) setFullNotes((n) => ({ ...n, [sheet.id]: draft.notes }))
+              haptic()
               closeSheet()
+              offerFolderRename(before, saved)
             }}
           />
         )
@@ -423,6 +468,9 @@ export function CalendarScreen({ name, username }: { name: string; username: str
 
       case 'uploads':
         return <UploadQueueSheet onClose={closeSheet} />
+
+      case 'search':
+        return <SearchSheet initialJobsOnly={sheet.jobsOnly} onClose={closeSheet} onOpenEvent={(e) => openEvent(e.id, e)} />
 
       case 'hours':
         return <WorkHoursSheet initialDate={sheet.date} onClose={closeSheet} />
@@ -469,11 +517,11 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         </button>
         <button
           type="button"
-          aria-label="Refresh"
-          onClick={() => void refresh()}
+          aria-label="Search"
+          onClick={() => pushSheet({ kind: 'search' })}
           className="rounded-full p-2 text-muted active:bg-surface-2"
         >
-          <Icon name="refresh" className={`h-5 w-5 ${status.kind === 'syncing' ? 'animate-spin' : ''}`} />
+          <Icon name="search" />
         </button>
         {uploads.length > 0 && (
           <button
@@ -516,6 +564,14 @@ export function CalendarScreen({ name, username }: { name: string; username: str
             {v.label}
           </button>
         ))}
+        <button
+          type="button"
+          aria-label="Refresh"
+          onClick={() => void refresh()}
+          className="shrink-0 rounded-lg px-1.5 text-muted active:bg-surface-2"
+        >
+          <Icon name="refresh" className={`h-4 w-4 ${status.kind === 'syncing' ? 'animate-spin' : ''}`} />
+        </button>
       </nav>
 
       <StatusBanner status={status} onRetry={() => void refresh()} />
@@ -587,6 +643,16 @@ export function CalendarScreen({ name, username }: { name: string; username: str
             >
               <Icon name="plus" className="h-5 w-5 text-brand" /> New event
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFabOpen(false)
+                pushSheet({ kind: 'search', jobsOnly: true })
+              }}
+              className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 font-medium shadow-lg active:bg-surface-2"
+            >
+              <Icon name="search" className="h-5 w-5 text-brand" /> All jobs
+            </button>
           </div>
         </>
       )}
@@ -602,7 +668,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
 
       {stack.map((sheet, i) => (
         <SheetActiveContext.Provider key={i} value={i === stack.length - 1}>
-          {renderSheet(sheet)}
+          <Suspense fallback={<SheetLoading />}>{renderSheet(sheet)}</Suspense>
         </SheetActiveContext.Provider>
       ))}
 
@@ -612,12 +678,40 @@ export function CalendarScreen({ name, username }: { name: string; username: str
           className={`fixed inset-x-4 bottom-24 z-50 mx-auto max-w-md rounded-xl px-4 py-3 text-sm shadow-lg ${
             toast.error ? 'bg-danger text-white' : 'bg-text text-bg'
           }`}
-          onClick={() => setToast(null)}
+          onClick={() => !toast.action && setToast(null)}
         >
-          {toast.text}
+          <div className="flex items-center gap-3">
+            <span className="flex-1">{toast.text}</span>
+            {toast.action && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = toast.action!
+                    setToast(null)
+                    action.run().catch((err: unknown) =>
+                      showToast(`Couldn't do that: ${err instanceof Error ? err.message : String(err)}`, true),
+                    )
+                  }}
+                  className="shrink-0 rounded-lg bg-brand px-3 py-1.5 font-semibold text-white"
+                >
+                  {toast.action.label}
+                </button>
+                <button type="button" aria-label="Dismiss" onClick={() => setToast(null)} className="shrink-0 opacity-70">
+                  <Icon name="close" className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
+  )
+}
+
+function SheetLoading() {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 mx-auto h-40 max-w-lg animate-pulse rounded-t-2xl bg-surface shadow-xl" aria-label="Loading" />
   )
 }
 
