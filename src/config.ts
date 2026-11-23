@@ -15,7 +15,8 @@ export const config = {
   redirectUri: new URL(import.meta.env.BASE_URL, window.location.origin).href,
 } as const
 
-export const isConfigured = Boolean(config.clientId && config.tenantId)
+export const isConfigured =
+  import.meta.env.VITE_DEMO === '1' || Boolean(config.clientId && config.tenantId)
 
 /**
  * Delegated Microsoft Graph permissions. Requested all at once on first

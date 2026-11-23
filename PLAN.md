@@ -325,19 +325,23 @@ view/
 ### Phase 0: Setup
 Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 
-- [ ] Register the app in Entra ID (§3), get admin consent if needed
+- [x] Register the app in Entra ID (§3), get admin consent if needed
 - [x] Scaffold the Vite + React + TS + PWA project
 - [x] GitHub Actions build/deploy workflow
-- [ ] Choose hosting and confirm the HTTPS URL (see docs/SETUP.md)
+- [x] Hosting: GitHub Pages at https://saderhd.github.io/view/
 - [x] Sign-in screen + connection check (profile, calendar, OneDrive)
-- [ ] Install on Android (Chrome → ⋮ → *Install app*)
+- [x] Install on Android (Chrome → ⋮ → *Install app*)
 
 ### Phase 1: Calendar
-- [ ] Microsoft sign-in (MSAL, redirect flow, stays signed in)
-- [ ] Month / week / day / agenda views from `calendarView`
-- [ ] Day sheet when a date is tapped
-- [ ] Create / edit / delete events → Outlook
-- [ ] Offline cache + pull-to-refresh + delta sync
+- [x] Microsoft sign-in (MSAL, redirect flow, stays signed in)
+- [x] Month / week / 3-day / day / list views from `calendarView`
+- [x] Day sheet when a date is tapped
+- [x] Create / edit / delete events → Outlook (other people's meetings are read-only;
+      repeating events edit one occurrence)
+- [x] Offline cache (IndexedDB) + refresh button + auto-refresh on app open / reconnect
+- [x] Swipe left/right to change month/week/day; Android Back closes sheets
+- [ ] Delta sync (`calendarView/delta`), deferred because a full refresh of the
+      visible range is one request and fast enough for now
 - **Milestone:** your real Outlook calendar on your phone, editable.
 
 ### Phase 2: Jobs, folders and uploads

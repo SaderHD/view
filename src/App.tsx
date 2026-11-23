@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAccount, initAuth } from './auth/msal'
 import { isConfigured } from './config'
-import { HomeScreen } from './screens/HomeScreen'
+import { CalendarScreen } from './screens/CalendarScreen'
 import { NotConfiguredScreen } from './screens/NotConfiguredScreen'
 import { SignInScreen } from './screens/SignInScreen'
 
@@ -34,14 +34,12 @@ export default function App() {
 
   switch (state.kind) {
     case 'loading':
-      return (
-        <div className="flex min-h-dvh items-center justify-center text-muted">Loading…</div>
-      )
+      return <div className="flex min-h-dvh items-center justify-center text-muted">Loading…</div>
     case 'error':
       return <SignInScreen error={state.message} />
     case 'signedOut':
       return <SignInScreen />
     case 'signedIn':
-      return <HomeScreen name={state.name} username={state.username} />
+      return <CalendarScreen name={state.name} username={state.username} />
   }
 }

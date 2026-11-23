@@ -48,3 +48,83 @@ code {
   border-radius: 0.25rem;
   background: var(--color-surface-2);
 }
+
+/* ── Sheets ─────────────────────────────────────────────── */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sheet-panel { animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sheet-backdrop { animation: fade-in 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-panel, .sheet-backdrop { animation: none; }
+}
+
+/* ── FullCalendar theme ─────────────────────────────────── */
+.fc {
+  --fc-border-color: var(--color-line);
+  --fc-page-bg-color: var(--color-surface);
+  --fc-neutral-bg-color: var(--color-surface-2);
+  --fc-today-bg-color: color-mix(in srgb, var(--color-brand) 8%, transparent);
+  --fc-now-indicator-color: #ef4444;
+  --fc-list-event-hover-bg-color: var(--color-surface-2);
+  font-size: 0.85rem;
+}
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number,
+.fc .fc-list-day-text,
+.fc .fc-list-day-side-text {
+  color: var(--color-text);
+  text-decoration: none;
+}
+.fc .fc-col-header-cell-cushion { color: var(--color-muted); font-weight: 500; padding: 4px 2px; }
+.fc .fc-daygrid-day-number { padding: 4px 6px; font-size: 0.8rem; }
+.fc .fc-day-today .fc-daygrid-day-number {
+  background: var(--color-brand);
+  color: #fff;
+  border-radius: 999px;
+  min-width: 1.6rem;
+  text-align: center;
+  margin: 2px;
+  padding: 2px 6px;
+}
+.fc .fc-day-other .fc-daygrid-day-top { opacity: 0.4; }
+.fc .fc-daygrid-event { border-radius: 4px; margin-top: 1px; }
+.fc .fc-daygrid-dot-event .fc-event-title { font-weight: 500; }
+.fc .fc-daygrid-more-link { color: var(--color-muted); font-size: 0.75rem; }
+.fc .fc-timegrid-slot { height: 2.6em; }
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion { color: var(--color-muted); font-size: 0.75rem; }
+.fc .fc-list-event-dot { border-color: var(--ev); }
+.fc .fc-list-empty { background: var(--color-surface); color: var(--color-muted); }
+.fc a { color: inherit; }
+
+/* ── Event colours ──────────────────────────────────────── */
+.ev-busy, .ev-unknown { --ev: #0f766e; }
+.ev-job { --ev: var(--color-brand); }
+.ev-tentative { --ev: #a16207; }
+.ev-oof { --ev: #7c3aed; }
+.ev-workingElsewhere { --ev: #475569; }
+.ev-free { --ev: #94a3b8; }
+.fc-event.ev-cancelled { opacity: 0.5; }
+.fc-event.ev-cancelled .fc-event-title,
+.fc-event.ev-cancelled .fc-list-event-title { text-decoration: line-through; }
+.day-bar { background: var(--ev); }
+/* Each event carries its own --ev colour, so apply it on the event itself. */
+.fc .fc-event { background-color: var(--ev); border-color: var(--ev); color: #fff; }
+.fc .fc-event .fc-event-main { color: #fff; }
+.fc .fc-list-event { background-color: transparent; color: var(--color-text); }
+.fc .fc-daygrid-block-event .fc-event-title { font-size: 0.7rem; font-weight: 500; padding: 0 2px; overflow: hidden; text-overflow: clip; }
+.fc .fc-daygrid-block-event { margin-left: 1px; margin-right: 1px; }
+.fc .fc-event.ev-free:not(.fc-daygrid-dot-event):not(.fc-list-event) {
+  background: transparent;
+  color: var(--color-text);
+}
+.fc .fc-event.ev-free:not(.fc-daygrid-dot-event):not(.fc-list-event) .fc-event-main { color: var(--color-text); }
+.fc .fc-event.ev-tentative:not(.fc-daygrid-dot-event):not(.fc-list-event) {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.18) 6px 12px);
+}
