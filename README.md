@@ -7,7 +7,7 @@ A personal, calendar-first job organizer for Android, built on Outlook calendar 
 - Set work hours week by week
 - Type in a job and get the best open time slots
 
-**Status:** Phase 1: your Outlook calendar (month/week/3-day/day/list), tap a day, add/edit/delete events, works offline.
+**Status:** Phase 2: Outlook calendar plus jobs. Each job has a OneDrive folder; upload from camera, gallery, files or Android's Share menu, with an offline upload queue.
 
 - **[docs/SETUP.md](docs/SETUP.md)**: get it running on your phone (start here)
 - **[PLAN.md](PLAN.md)**: full plan, architecture and roadmap

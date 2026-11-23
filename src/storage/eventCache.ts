@@ -1,26 +1,12 @@
-import { openDB, type IDBPDatabase } from 'idb'
 import type { CalEvent } from '../calendar/types'
 import { overlaps, toDate } from '../calendar/time'
+import { db, EVENTS } from './db'
 
 /**
  * On-device copy of the calendar (IndexedDB) so the app opens instantly and
  * still shows your schedule with no signal. Outlook is always the source of
  * truth; this is only a cache.
  */
-
-const DB_NAME = 'view-cache'
-const EVENTS = 'events'
-
-let dbPromise: Promise<IDBPDatabase> | null = null
-
-function db() {
-  dbPromise ??= openDB(DB_NAME, 1, {
-    upgrade(d) {
-      d.createObjectStore(EVENTS, { keyPath: 'id' })
-    },
-  })
-  return dbPromise
-}
 
 const inRange = (e: CalEvent, start: Date, end: Date) => overlaps(toDate(e.start), toDate(e.end), start, end)
 

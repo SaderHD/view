@@ -345,13 +345,14 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - **Milestone:** your real Outlook calendar on your phone, editable.
 
 ### Phase 2: Jobs, folders and uploads
-- [ ] Job model (event + open extension), `Job` category
-- [ ] Auto-create job folders with subfolders
-- [ ] OneDrive browser/picker; link existing folders and files
-- [ ] Job detail screen with file list and thumbnails
-- [ ] Upload from camera, gallery and files (small + chunked uploads)
-- [ ] Android Share-to-View (Web Share Target)
-- [ ] Offline upload queue
+- [x] Job model (event + open extension `com.saderhd.view.job`), `Job` category, job ID, customer, status
+- [x] Auto-create job folders (`View/Jobs/<date> - <customer> - <title>`) with Reports / Receipts / Photos
+- [x] "Make this a job" on any of your events, or "This is a job" when creating one
+- [x] OneDrive browser/picker with search; link an existing folder as the job folder; attach extra files
+- [x] Job files screen: subfolders, thumbnails, open in OneDrive/Office, new folder
+- [x] Upload from camera (auto-named `Photo_<date>_<time>`), gallery and files; files over 4 MB go up in resumable 5 MB chunks
+- [x] Android Share-to-View (Web Share Target): pick the job and subfolder for shared files
+- [x] Offline upload queue (saved on the phone, sent when back online, retry/remove failed uploads)
 - **Milestone:** tap a date → job → see and add files, all saved in OneDrive.
 
 ### Phase 3: Work hours and smart scheduling

@@ -1,3 +1,5 @@
+import type { JobInfo } from '../jobs/types'
+
 export type ShowAs = 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown'
 
 /**
@@ -24,6 +26,8 @@ export interface CalEvent {
   /** "occurrence" / "exception" = one instance of a repeating series. */
   type: 'singleInstance' | 'occurrence' | 'exception' | 'seriesMaster'
   webLink: string
+  /** Job info if this event is a job; null = not a job; undefined = not loaded. */
+  job?: JobInfo | null
 }
 
 /** What the event form edits. */

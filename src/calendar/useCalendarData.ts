@@ -8,6 +8,7 @@ import {
   replaceRange,
 } from '../storage/eventCache'
 import { overlaps, toDate } from './time'
+import type { JobInfo } from '../jobs/types'
 import type { CalEvent, EventDraft } from './types'
 
 export type SyncStatus =
@@ -40,6 +41,10 @@ export function useCalendarData() {
   const [events, setEvents] = useState<CalEvent[]>([])
   const [status, setStatus] = useState<SyncStatus>({ kind: 'idle', lastSynced: null })
   const range = useRef<{ start: Date; end: Date } | null>(null)
+  const eventsRef = useRef(events)
+  useEffect(() => {
+    eventsRef.current = events
+  }, [events])
   const latestRequest = useRef(0)
 
   const sync = useCallback(async (start: Date, end: Date) => {
@@ -101,10 +106,12 @@ export function useCalendarData() {
 
   const update = useCallback(
     async (id: string, draft: EventDraft, notesChanged: boolean) => {
-      const updated = await updateEvent(id, draft, notesChanged)
-      setEvents((prev) => prev.map((e) => (e.id === id ? updated : e)))
-      await putCachedEvent(updated)
-      return updated
+      const fresh = await updateEvent(id, draft, notesChanged)
+      // Edit responses don't include the job info; keep what we have.
+      const merged = { ...fresh, job: fresh.job ?? eventsRef.current.find((e) => e.id === id)?.job }
+      setEvents((prev) => prev.map((e) => (e.id === id ? merged : e)))
+      await putCachedEvent(merged)
+      return merged
     },
     [],
   )
@@ -115,5 +122,14 @@ export function useCalendarData() {
     await deleteCachedEvent(id)
   }, [])
 
-  return { events, status, loadRange, refresh, create, update, remove }
+  /** Record job info (and categories) for an event after a job change. */
+  const setJob = useCallback(async (id: string, job: JobInfo | null, categories?: string[]) => {
+    const current = eventsRef.current.find((e) => e.id === id)
+    if (!current) return
+    const changed: CalEvent = { ...current, job, categories: categories ?? current.categories }
+    setEvents((prev) => prev.map((e) => (e.id === id ? changed : e)))
+    await putCachedEvent(changed)
+  }, [])
+
+  return { events, status, loadRange, refresh, create, update, remove, setJob }
 }

@@ -61,11 +61,13 @@ export function EventForm({
   /** False when the event's full notes couldn't be loaded; editing them could lose text. */
   notesEditable?: boolean
   onClose: () => void
-  /** Resolves when saved; rejects with an error to show. */
-  onSave: (draft: EventDraft, notesChanged: boolean) => Promise<void>
+  /** Resolves when saved; rejects with an error to show. jobOptions is set when "This is a job" is on. */
+  onSave: (draft: EventDraft, notesChanged: boolean, jobOptions?: { customer: string }) => Promise<void>
 }) {
   const [form, setForm] = useState<FormState>(() => fromDraft(initial))
   const [saving, setSaving] = useState(false)
+  const [isJob, setIsJob] = useState(false)
+  const [customer, setCustomer] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }))
@@ -91,7 +93,7 @@ export function EventForm({
     setSaving(true)
     setError(null)
     try {
-      await onSave(draft, form.notes !== initial.notes)
+      await onSave(draft, form.notes !== initial.notes, mode === 'new' && isJob ? { customer } : undefined)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setSaving(false)
@@ -126,7 +128,7 @@ export function EventForm({
               disabled={saving || !!problem}
               className="flex-1 rounded-xl bg-brand py-3 font-medium text-white disabled:opacity-50"
             >
-              {saving ? 'Saving…' : mode === 'new' ? 'Add to Outlook' : 'Save'}
+              {saving ? 'Saving…' : mode === 'new' ? (isJob ? 'Add job to Outlook' : 'Add to Outlook') : 'Save'}
             </button>
           </div>
         </div>
@@ -147,6 +149,33 @@ export function EventForm({
           autoFocus={mode === 'new'}
           enterKeyHint="done"
         />
+
+        {mode === 'new' && (
+          <div className="rounded-lg border border-line">
+            <label className="flex items-center justify-between px-3 py-2.5">
+              <span>
+                This is a job
+                <span className="block text-xs text-muted">Creates a OneDrive folder for its files</span>
+              </span>
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-[var(--color-brand)]"
+                checked={isJob}
+                onChange={(e) => setIsJob(e.target.checked)}
+              />
+            </label>
+            {isJob && (
+              <div className="border-t border-line px-3 py-2.5">
+                <input
+                  className={input}
+                  placeholder="Customer (optional)"
+                  value={customer}
+                  onChange={(e) => setCustomer(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <label className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5">
           <span>All day</span>

@@ -9,11 +9,14 @@ export function EventDetail({
   onClose,
   onEdit,
   onDelete,
+  extra,
 }: {
   event: CalEvent
   onClose: () => void
   onEdit: () => void
   onDelete: () => Promise<void>
+  /** Extra content under the details (the job section). */
+  extra?: ReactNode
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -140,6 +143,7 @@ export function EventDetail({
           </Row>
         )}
       </dl>
+      {extra}
       {error && <p className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
     </Sheet>
   )
