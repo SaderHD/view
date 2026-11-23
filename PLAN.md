@@ -323,9 +323,13 @@ view/
 ## 7. Phases and milestones
 
 ### Phase 0: Setup
+Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
+
 - [ ] Register the app in Entra ID (§3), get admin consent if needed
-- [ ] Scaffold the Vite + React + TS + PWA project
-- [ ] GitHub Actions deploy to hosting; confirm the HTTPS URL
+- [x] Scaffold the Vite + React + TS + PWA project
+- [x] GitHub Actions build/deploy workflow
+- [ ] Choose hosting and confirm the HTTPS URL (see docs/SETUP.md)
+- [x] Sign-in screen + connection check (profile, calendar, OneDrive)
 - [ ] Install on Android (Chrome → ⋮ → *Install app*)
 
 ### Phase 1: Calendar
