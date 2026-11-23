@@ -46,7 +46,7 @@ const ev = (p: Partial<FakeEvent> & Pick<FakeEvent, 'subject' | 'start' | 'end'>
 })
 
 const store: FakeEvent[] = [
-  ev({ subject: 'Roof inspection – Smith', start: at(0, 8), end: at(0, 11), location: '412 Oak St, Springfield', categories: ['Job'], body: 'Check flashing around chimney.\nCustomer will be home after 9.' }),
+  ev({ subject: 'Roof inspection – Smith', start: at(0, 8), end: at(0, 11), location: 'Springfield', categories: ['Job'], body: 'Check flashing around chimney.\nCustomer will be home after 9.' }),
   ev({ subject: 'Team stand-up', start: at(0, 12), end: at(0, 12, 30), isOrganizer: false, organizer: 'Dana Ortiz', location: 'Teams' }),
   ev({ subject: 'Gutter repair – Nguyen', start: at(0, 13, 30), end: at(0, 16), location: '88 Birch Ln', categories: ['Job'] }),
   ev({ subject: 'Materials pickup', start: at(1, 7, 30), end: at(1, 8, 15), location: 'Home Depot – Main St', showAs: 'tentative' }),
@@ -61,8 +61,10 @@ const store: FakeEvent[] = [
   ev({ subject: 'Vacation', start: at(9, 0), end: at(12, 0), isAllDay: true, showAs: 'oof' }),
   ev({ subject: 'Fence repair – Lee', start: at(6, 10), end: at(6, 13), location: '310 Pine St', categories: ['Job'] }),
   ev({ subject: 'Invoice follow-ups', start: at(5, 8), end: at(5, 9) }),
-  ev({ subject: 'Fix electricity', start: at(4, 10), end: at(4, 12), location: 'X Water Co pump station', categories: ['Job'] }),
-  ev({ subject: 'Generator repair', start: at(-4, 9), end: at(-4, 12), location: 'X Water Co plant', categories: ['Job'] }),
+  ev({ subject: 'Fix electricity', start: at(4, 10), end: at(4, 12), location: 'Springfield', categories: ['Job'] }),
+  ev({ subject: 'Generator repair', start: at(-4, 9), end: at(-4, 12), location: 'Riverton', categories: ['Job'] }),
+  ev({ subject: 'Window cleaning', start: at(3, 7), end: at(3, 7, 45), location: 'Austin', categories: ['Job'] }),
+  ev({ subject: 'HVAC check', start: at(-6, 13), end: at(-6, 15), location: 'Dallas', categories: ['Job'] }),
   ev({ subject: 'Kitchen walkthrough – Adams', start: at(8, 14), end: at(8, 15, 30), location: '45 Maple Ave', categories: ['Job'] }),
 ]
 
@@ -105,16 +107,28 @@ addItem(root.id, 'Documents', true)
 const viewF = addItem(root.id, 'View', true)
 const clientsF = addItem(viewF.id, 'Clients', true)
 const smithClient = addItem(clientsF.id, 'Smith', true)
-const smithF = addItem(smithClient.id, 'Roof inspection – Smith', true)
+const smithCity = addItem(smithClient.id, 'Springfield', true)
+const smithF = addItem(smithCity.id, 'Roof inspection – Smith', true)
 addItem(smithF.id, 'Reports', true)
 const receipts = addItem(smithF.id, 'Receipts', true)
 const photos = addItem(smithF.id, 'Photos', true)
 addItem(receipts.id, 'Receipt_shingles.jpg', false, { size: 182_000, mime: 'image/jpeg', thumb: swatch('#a16207', '$') })
 addItem(photos.id, 'Chimney_before.jpg', false, { size: 2_400_000, mime: 'image/jpeg', thumb: swatch('#0f766e', 'IMG') })
 const waterCo = addItem(clientsF.id, 'X Water Company', true)
-const electricF = addItem(waterCo.id, 'Fix electricity', true)
-const generatorF = addItem(waterCo.id, 'Generator repair', true)
-for (const f of [electricF, generatorF]) for (const sub of ['Reports', 'Receipts', 'Photos']) addItem(f.id, sub, true)
+const electricF = addItem(addItem(waterCo.id, 'Springfield', true).id, 'Fix electricity', true)
+const generatorF = addItem(addItem(waterCo.id, 'Riverton', true).id, 'Generator repair', true)
+const oracle = addItem(clientsF.id, 'Oracle', true)
+const windowsF = addItem(addItem(oracle.id, 'Austin', true).id, 'Window cleaning', true)
+const hvacF = addItem(addItem(oracle.id, 'Dallas', true).id, 'HVAC check', true)
+for (const f of [electricF, generatorF, windowsF, hvacF]) for (const sub of ['Reports', 'Receipts', 'Photos']) addItem(f.id, sub, true)
+// On first run, saved settings already know a few cities (the City box suggests
+// these). Later reloads keep the phone's copy, like a real OneDrive would.
+if (!localStorage.getItem('view:settings')) {
+  addItem(viewF.id, 'view-settings.json', false, {
+    mime: 'application/json',
+    text: JSON.stringify({ cities: ['Austin', 'Dallas', 'Riverton', 'Springfield'] }),
+  })
+}
 addItem(electricF.id, 'Panel wiring report.pdf', false, { size: 210_000, mime: 'application/pdf' })
 const oldJobs = addItem(root.id, 'Old jobs', true)
 const brooks = addItem(oldJobs.id, 'Brooks windows', true)
@@ -223,9 +237,10 @@ store[0].ext = {
   status: 'scheduled',
   folderJson: JSON.stringify({ driveId: DRIVE, itemId: smithF.id, name: smithF.name, webUrl: '', isFolder: true }),
   linksJson: JSON.stringify([]),
+  citiesJson: JSON.stringify(['Springfield']),
 }
 
-const extFor = (jobId: string, client: string, folder: FakeItem, status: string) => ({
+const extFor = (jobId: string, client: string, folder: FakeItem, status: string, cities: string[]) => ({
   extensionName: 'com.saderhd.view.job',
   id: 'Microsoft.OutlookServices.OpenTypeExtension.com.saderhd.view.job',
   jobId,
@@ -233,9 +248,12 @@ const extFor = (jobId: string, client: string, folder: FakeItem, status: string)
   status,
   folderJson: JSON.stringify({ driveId: DRIVE, itemId: folder.id, name: folder.name, webUrl: '', isFolder: true }),
   linksJson: JSON.stringify([]),
+  citiesJson: JSON.stringify(cities),
 })
-store.find((e) => e.subject === 'Fix electricity')!.ext = extFor('J-DEMO-XW1', 'X Water Company', electricF, 'scheduled')
-store.find((e) => e.subject === 'Generator repair')!.ext = extFor('J-DEMO-XW2', 'X Water Company', generatorF, 'done')
+store.find((e) => e.subject === 'Fix electricity')!.ext = extFor('J-DEMO-XW1', 'X Water Company', electricF, 'scheduled', ['Springfield'])
+store.find((e) => e.subject === 'Generator repair')!.ext = extFor('J-DEMO-XW2', 'X Water Company', generatorF, 'done', ['Riverton'])
+store.find((e) => e.subject === 'Window cleaning')!.ext = extFor('J-DEMO-OR1', 'Oracle', windowsF, 'scheduled', ['Austin'])
+store.find((e) => e.subject === 'HVAC check')!.ext = extFor('J-DEMO-OR2', 'Oracle', hvacF, 'invoiced', ['Dallas'])
 
 const toGraph = (e: FakeEvent, selectBody = false) => ({
   id: e.id,

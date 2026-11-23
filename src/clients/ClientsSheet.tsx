@@ -78,12 +78,14 @@ export function ClientSheet({
   name: string
   onClose: () => void
   onOpenEvent: (event: CalEvent) => void
-  onOpenFolder: (folder: DriveRef) => void
+  onOpenFolder: (folder: DriveRef, city: string | null) => void
   onScheduleJob: (client: string) => void
 }) {
   const [index, setIndex] = useState<SearchIndex | null>(null)
   const [folder, setFolder] = useState<DriveRef | null | undefined>(undefined)
   const [now] = useState(() => new Date())
+  const [city, setCity] = useState<string | null>(null)
+  const [cityFolder, setCityFolder] = useState<{ city: string; folder: DriveRef | null } | null>(null)
 
   useEffect(() => {
     loadSearchIndex().then(setIndex)
@@ -93,13 +95,36 @@ export function ClientSheet({
     )
   }, [name])
 
-  const jobs = useMemo(() => {
+  const allJobs = useMemo(() => {
     if (!index) return []
     const key = name.toLowerCase()
     return searchEvents(index.events, '', { jobsOnly: true, status: null, when: 'all' }).filter(
       (e) => e.job?.customer.toLowerCase() === key,
     )
   }, [index, name])
+
+  // The client's cities (from its jobs), most-used first.
+  const cities = useMemo(() => {
+    const count = new Map<string, number>()
+    for (const e of allJobs) for (const c of e.job?.cities ?? []) count.set(c, (count.get(c) ?? 0) + 1)
+    return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c]) => c)
+  }, [allJobs])
+
+  const jobs = city ? allJobs.filter((e) => e.job?.cities.some((c) => c.toLowerCase() === city.toLowerCase())) : allJobs
+
+  // The selected city's folder (View/Clients/<client>/<city>).
+  useEffect(() => {
+    if (!city) return
+    let stale = false
+    findFolder([...CLIENTS_ROOT, name, city]).then(
+      (f) => !stale && setCityFolder({ city, folder: f ? toRef(f) : null }),
+      () => !stale && setCityFolder({ city, folder: null }),
+    )
+    return () => {
+      stale = true
+    }
+  }, [city, name])
+  const shownFolder = city ? (cityFolder?.city === city ? cityFolder.folder : undefined) : folder
   const upcoming = jobs.filter((j) => toDate(j.end) > now)
   const past = jobs.filter((j) => toDate(j.end) <= now)
 
@@ -111,11 +136,12 @@ export function ClientSheet({
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={!folder}
-            onClick={() => folder && onOpenFolder(folder)}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-line py-3 font-medium active:bg-surface-2 disabled:opacity-50"
+            disabled={!shownFolder}
+            onClick={() => shownFolder && onOpenFolder(shownFolder, city)}
+            className="flex flex-1 items-center justify-center gap-2 truncate rounded-xl border border-line px-2 py-3 font-medium active:bg-surface-2 disabled:opacity-50"
           >
-            <Icon name="folder" /> {folder === undefined ? 'Loading…' : folder ? 'Client folder' : 'No folder yet'}
+            <Icon name="folder" />{' '}
+            {shownFolder === undefined ? 'Loading…' : shownFolder ? (city ? `${city} folder` : 'Client folder') : 'No folder yet'}
           </button>
           <button
             type="button"
@@ -127,9 +153,28 @@ export function ClientSheet({
         </div>
       }
     >
+      {cities.length > 0 && (
+        <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Filter by city">
+          {[null, ...cities].map((c) => (
+            <button
+              key={c ?? '__all'}
+              type="button"
+              aria-pressed={city === c}
+              onClick={() => setCity(c)}
+              className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-sm ${city === c ? 'bg-brand text-white' : 'bg-surface-2 active:bg-line'}`}
+            >
+              {c && <Icon name="pin" className="h-3.5 w-3.5" />}
+              {c ?? 'All locations'}
+            </button>
+          ))}
+        </div>
+      )}
       {!index && <p className="py-6 text-center text-muted">Loading jobs…</p>}
       {index && jobs.length === 0 && (
-        <p className="py-6 text-center text-sm text-muted">No jobs for {name} in the last six months or the next year.</p>
+        <p className="py-6 text-center text-sm text-muted">
+          No jobs for {name}
+          {city ? ` in ${city}` : ''} in the last six months or the next year.
+        </p>
       )}
       {[
         { label: 'Upcoming', list: upcoming },
@@ -154,6 +199,7 @@ export function ClientSheet({
                       <span className="block truncate text-sm text-muted">
                         {toDate(e.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · {describeWhen(e)}
                       </span>
+                      {!!e.job?.cities.length && <span className="block truncate text-xs text-muted">{e.job.cities.join(' → ')}</span>}
                     </span>
                     {e.job && <StatusBadge status={e.job.status} />}
                   </button>

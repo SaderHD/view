@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { addDays, dateKey, fmtDayShort, fmtTime, startOfDay, toDate } from '../calendar/time'
 import type { CalEvent } from '../calendar/types'
+import { CityPicker } from '../clients/CityPicker'
 import { ClientPicker } from '../clients/ClientPicker'
 import { Icon, Sheet } from '../components/Sheet'
 import { listEvents } from '../graph/calendar'
 import { useSettings } from '../settings/store'
 import { getCachedEvents } from '../storage/eventCache'
-import { suggestSlots, type Suggestion, type TimePref } from './scheduler'
+import { allocateStops, suggestSlots, type Stop, type Suggestion, type TimePref } from './scheduler'
 
 export interface JobDetails {
   title: string
   /** Client name (folder under View/Clients). */
   customer: string
-  location: string
+  /** Where the job happens and how long each stop takes, in order. One stop for most jobs. */
+  stops: Stop[]
   notes: string
 }
 
 const DURATIONS = [60, 90, 120, 180, 240, 360, 480]
+/** 30 min to 10 h in 30-minute steps. */
+const STOP_DURATIONS = Array.from({ length: 20 }, (_, i) => (i + 1) * 30)
 const fmtDuration = (m: number) => (m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`).replace(/^0h /, '')
 
 /** Type in a job → get the best open slots → book one with a tap. */
@@ -35,9 +39,14 @@ export function FindTimeSheet({
 }) {
   const { settings } = useSettings()
   const [today] = useState(() => dateKey(new Date()))
-  const [details, setDetails] = useState<JobDetails>({ title: '', customer: initialClient, location: '', notes: '' })
-  const [duration, setDuration] = useState(120)
+  const [details, setDetails] = useState<Omit<JobDetails, 'stops'>>({ title: '', customer: initialClient, notes: '' })
+  const [stops, setStops] = useState<Stop[]>([{ city: '', minutes: 120 }])
   const [customDuration, setCustomDuration] = useState(false)
+  const duration = stops.reduce((m, st) => m + st.minutes, 0)
+  const multi = stops.length > 1
+  const setStop = (i: number, patch: Partial<Stop>) => setStops((list) => list.map((st, j) => (j === i ? { ...st, ...patch } : st)))
+  const setDuration = (m: number) => setStop(0, { minutes: m })
+  const cities = stops.map((st) => st.city.trim()).filter(Boolean)
   const [earliest, setEarliest] = useState(() => dateKey(initialEarliest && initialEarliest > new Date() ? initialEarliest : new Date()))
   const [deadline, setDeadline] = useState('')
   const [preferred, setPreferred] = useState<TimePref>('any')
@@ -55,7 +64,7 @@ export function FindTimeSheet({
     if (results) resultsTop.current?.scrollIntoView({ block: 'start' })
   }, [results])
 
-  const set = <K extends keyof JobDetails>(k: K, v: string) => setDetails((d) => ({ ...d, [k]: v }))
+  const set = <K extends keyof Omit<JobDetails, 'stops'>>(k: K, v: string) => setDetails((d) => ({ ...d, [k]: v }))
 
   async function find() {
     setSearching(true)
@@ -80,7 +89,7 @@ export function FindTimeSheet({
           preferred,
           allowSplit,
           urgent,
-          location: details.location,
+          cities,
         },
         events,
         settings,
@@ -93,7 +102,7 @@ export function FindTimeSheet({
     setBooking(i)
     setError(null)
     try {
-      await onBook({ ...details, title: details.title.trim() || 'New job' }, s)
+      await onBook({ ...details, stops, title: details.title.trim() || 'New job' }, s)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBooking(null)
@@ -129,34 +138,80 @@ export function FindTimeSheet({
         <div className="space-y-4">
           <input className={`${input} text-lg font-medium`} placeholder="Job title, e.g. Roof inspection" value={details.title} onChange={(e) => set('title', e.target.value)} autoFocus />
           <ClientPicker value={details.customer} onChange={(v) => set('customer', v)} />
-          <input className={input} placeholder="Address (ZIP helps group nearby jobs)" value={details.location} onChange={(e) => set('location', e.target.value)} autoComplete="street-address" />
-
-          <Field label="How long will it take?">
-            <div className="flex flex-wrap gap-1.5">
-              {DURATIONS.map((m) => (
-                <button key={m} type="button" onClick={() => { setDuration(m); setCustomDuration(false) }} className={chip(!customDuration && duration === m)}>
-                  {fmtDuration(m)}
-                </button>
-              ))}
-              <button type="button" onClick={() => setCustomDuration(true)} className={chip(customDuration)}>
-                Other
-              </button>
-            </div>
-            {customDuration && (
-              <div className="mt-2 flex items-center gap-2">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0.25}
-                  step={0.25}
-                  className={`${input} w-28`}
-                  value={duration / 60}
-                  onChange={(e) => setDuration(Math.max(15, Math.round((Number(e.target.value) || 0) * 4) * 15))}
-                />
-                <span className="text-muted">hours</span>
-              </div>
-            )}
-          </Field>
+          {!multi ? (
+            <>
+              <CityPicker value={stops[0].city} onChange={(v) => setStop(0, { city: v })} />
+              <Field label="How long will it take?">
+                <div className="flex flex-wrap gap-1.5">
+                  {DURATIONS.map((m) => (
+                    <button key={m} type="button" onClick={() => { setDuration(m); setCustomDuration(false) }} className={chip(!customDuration && duration === m)}>
+                      {fmtDuration(m)}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setCustomDuration(true)} className={chip(customDuration)}>
+                    Other
+                  </button>
+                </div>
+                {customDuration && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0.25}
+                      step={0.25}
+                      className={`${input} w-28`}
+                      value={duration / 60}
+                      onChange={(e) => setDuration(Math.max(15, Math.round((Number(e.target.value) || 0) * 4) * 15))}
+                    />
+                    <span className="text-muted">hours</span>
+                  </div>
+                )}
+              </Field>
+            </>
+          ) : (
+            <Field label={`Locations, in order (${fmtDuration(duration)} total)`}>
+              <ol className="space-y-2">
+                {stops.map((st, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="mt-3 w-4 shrink-0 text-center text-sm font-semibold text-muted">{i + 1}</span>
+                    <CityPicker value={st.city} label={`City ${i + 1}`} onChange={(v) => setStop(i, { city: v })} />
+                    <select
+                      aria-label={`Time at stop ${i + 1}`}
+                      value={st.minutes}
+                      onChange={(e) => setStop(i, { minutes: Number(e.target.value) })}
+                      className="mt-0 w-24 shrink-0 rounded-lg border border-line bg-bg px-2 py-2.5 outline-none focus:border-brand"
+                    >
+                      {STOP_DURATIONS.includes(st.minutes) ? null : <option value={st.minutes}>{fmtDuration(st.minutes)}</option>}
+                      {STOP_DURATIONS.map((m) => (
+                        <option key={m} value={m}>
+                          {fmtDuration(m)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      aria-label={`Remove stop ${i + 1}`}
+                      onClick={() => setStops((list) => list.filter((_, j) => j !== i))}
+                      className="mt-2 p-1.5 text-muted active:text-danger"
+                    >
+                      <Icon name="close" className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-1 text-xs text-muted">Booked back to back as one job with one folder (under the first city).</p>
+            </Field>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setCustomDuration(false)
+              setStops((list) => [...list, { city: '', minutes: 60 }])
+            }}
+            className="-mt-2 text-sm font-medium text-brand"
+          >
+            + Add another location (same job)
+          </button>
 
           <div className="flex gap-2">
             <Field label="Earliest">
@@ -190,6 +245,7 @@ export function FindTimeSheet({
           <p className="mb-3 text-sm text-muted">
             {fmtDuration(duration)} · {details.title || 'New job'}
             {details.customer ? ` · ${details.customer}` : ''}
+            {cities.length ? ` · ${cities.join(' → ')}` : ''}
           </p>
           {offline && (
             <p className="mb-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">Offline: using your saved calendar. Double-check before booking.</p>
@@ -209,11 +265,18 @@ export function FindTimeSheet({
               {results.map((s, i) => (
                 <li key={i} className={`rounded-xl border p-3 ${i === 0 ? 'border-brand' : 'border-line'}`}>
                   {i === 0 && <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand">Best fit</p>}
-                  {s.slots.map((slot, j) => (
-                    <p key={j} className="font-semibold">
-                      {fmtDayShort(slot.start)} · {fmtTime(slot.start)} – {fmtTime(slot.end)}
-                    </p>
-                  ))}
+                  {multi
+                    ? allocateStops(s.slots, stops).map((seg, j) => (
+                        <p key={j} className="font-semibold">
+                          {fmtDayShort(seg.start)} · {fmtTime(seg.start)} – {fmtTime(seg.end)}
+                          <span className="font-normal text-muted"> · {seg.city || `Stop ${seg.stopIndex + 1}`}</span>
+                        </p>
+                      ))
+                    : s.slots.map((slot, j) => (
+                        <p key={j} className="font-semibold">
+                          {fmtDayShort(slot.start)} · {fmtTime(slot.start)} – {fmtTime(slot.end)}
+                        </p>
+                      ))}
                   {s.reasons.length > 0 && <p className="mt-0.5 text-sm text-muted">{s.reasons.join(' · ')}</p>}
                   <button
                     type="button"
@@ -221,14 +284,14 @@ export function FindTimeSheet({
                     disabled={booking !== null}
                     className={`mt-2 w-full rounded-lg py-2.5 font-medium disabled:opacity-50 ${i === 0 ? 'bg-brand text-white' : 'border border-line active:bg-surface-2'}`}
                   >
-                    {booking === i ? 'Booking…' : s.slots.length > 1 ? `Book all ${s.slots.length} parts` : 'Book this time'}
+                    {booking === i ? 'Booking…' : s.slots.length > 1 ? `Book all ${s.slots.length} parts` : multi ? `Book ${stops.length} stops` : 'Book this time'}
                   </button>
                 </li>
               ))}
             </ul>
           )}
           <p className="mt-3 text-center text-xs text-muted">
-            Booking adds it to Outlook and creates the job's folder inside the client's folder.
+            Booking adds it to Outlook and creates the job's folder: client › city › job.
           </p>
         </div>
       )}

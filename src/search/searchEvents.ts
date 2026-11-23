@@ -27,6 +27,7 @@ function haystack(e: CalEvent): string {
       e.categories.join(' '),
       e.organizerName,
       e.job?.customer ?? '',
+      e.job?.cities.join(' ') ?? '',
       e.job?.jobId ?? '',
       e.job ? statusLabel(e.job.status) : '',
       e.job?.folder?.name ?? '',

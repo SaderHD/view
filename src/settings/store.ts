@@ -142,6 +142,15 @@ if (typeof window !== 'undefined') {
   })
 }
 
+/** Remember cities used for jobs so the City box can suggest them next time. */
+export function rememberCities(cities: string[]): void {
+  const key = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const known = new Set(current.cities.map(key))
+  const added = cities.map((c) => c.trim().replace(/\s+/g, ' ')).filter((c) => c && !known.has(key(c)) && known.add(key(c)))
+  if (!added.length) return
+  saveSettings({ ...current, cities: [...current.cities, ...added].sort((a, b) => a.localeCompare(b)) })
+}
+
 export function getSettings(): Settings {
   return current
 }

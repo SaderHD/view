@@ -25,8 +25,8 @@ import type { JobInfo } from '../jobs/types'
 import { startQueue, useUploadQueue } from '../uploads/queue'
 import type { JobDetails } from '../schedule/FindTimeSheet'
 import { offHoursEvents } from '../schedule/offHours'
-import type { Suggestion } from '../schedule/scheduler'
-import { loadSettings, useSettings } from '../settings/store'
+import { allocateStops, type Suggestion } from '../schedule/scheduler'
+import { loadSettings, rememberCities, useSettings } from '../settings/store'
 
 // Less-used screens load on first use (they're cached for offline after that).
 const DrivePicker = lazy(() => import('../jobs/DrivePicker').then((m) => ({ default: m.DrivePicker })))
@@ -177,8 +177,9 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     await setJob(ev.id, job)
   }
 
-  async function createJob(ev: CalEvent, client: string, existingFolder?: DriveRef) {
-    const { job, categories } = await makeJob(ev, { client, existingFolder })
+  async function createJob(ev: CalEvent, client: string, cities: string[], existingFolder?: DriveRef) {
+    rememberCities(cities)
+    const { job, categories } = await makeJob(ev, { client, cities, existingFolder })
     await setJob(ev.id, job, categories)
   }
 
@@ -204,36 +205,66 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   )
 
   /** Book a suggested slot: create the event(s) and the job with its folder. */
+  /**
+   * Book a suggested slot: create the calendar event(s) and the job with its
+   * folder. A job with several locations gets one event per stop, back to
+   * back, all sharing one job and folder; a job split across days gets one
+   * event per part.
+   */
   async function bookJob(details: JobDetails, suggestion: Suggestion) {
-    const parts = suggestion.slots
-    const notes = [details.customer && `Client: ${details.customer}`, details.notes].filter(Boolean).join('\n')
+    const stops = details.stops
+    const cities = stops.map((st) => st.city.trim()).filter(Boolean)
+    const multiStop = stops.length > 1
+    const segments = allocateStops(suggestion.slots, stops)
+    const notes = [
+      details.customer && `Client: ${details.customer}`,
+      cities.length > 1 && `Locations: ${cities.join(' → ')}`,
+      details.notes,
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    // How many events each stop is split into, to number them "(1/2)".
+    const partsPerStop = segments.reduce<Record<number, number>>((m, sg) => ({ ...m, [sg.stopIndex]: (m[sg.stopIndex] ?? 0) + 1 }), {})
+    const seen: Record<number, number> = {}
     const created: CalEvent[] = []
-    for (const [i, slot] of parts.entries()) {
+    for (const sg of segments) {
+      seen[sg.stopIndex] = (seen[sg.stopIndex] ?? 0) + 1
+      const base = multiStop && sg.city ? `${details.title} – ${sg.city}` : details.title
+      const count = multiStop ? partsPerStop[sg.stopIndex] : segments.length
+      const n = multiStop ? seen[sg.stopIndex] : created.length + 1
       created.push(
         await create({
-          title: parts.length > 1 ? `${details.title} (${i + 1}/${parts.length})` : details.title,
+          title: count > 1 ? `${base} (${n}/${count})` : base,
           allDay: false,
-          start: slot.start,
-          end: slot.end,
-          location: details.location,
+          start: sg.start,
+          end: sg.end,
+          location: sg.city,
           notes,
           showAs: 'busy',
         }),
       )
     }
+    rememberCities(cities)
     // Events are in Outlook now; close the sheet even if the folder step fails.
     closeSheet()
     try {
-      const jobId = newJobId(slotsStart(parts))
-      const first = await makeJob(created[0], { client: details.customer, jobId, folderTitle: details.title })
+      const jobId = newJobId(segments[0].start)
+      const first = await makeJob(created[0], { client: details.customer, cities, jobId, folderTitle: details.title })
       await setJob(created[0].id, first.job, first.categories)
       for (const ev of created.slice(1)) {
-        const r = await makeJob(ev, { client: details.customer, jobId, existingFolder: first.job.folder ?? undefined })
+        const r = await makeJob(ev, { client: details.customer, cities, jobId, existingFolder: first.job.folder ?? undefined })
         await setJob(ev.id, r.job, r.categories)
       }
-      api()?.gotoDate(parts[0].start)
+      api()?.gotoDate(segments[0].start)
       haptic(20)
-      showToast(parts.length > 1 ? `Booked ${parts.length} parts with one job folder.` : 'Job booked and folder created.')
+      showToast(
+        multiStop
+          ? `Booked ${stops.length} stops as one job with one folder.`
+          : created.length > 1
+            ? `Booked ${created.length} parts with one job folder.`
+            : 'Job booked and folder created.',
+      )
     } catch (err) {
       showToast(`Booked in Outlook, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
     }
@@ -405,7 +436,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
               closeSheet()
               if (jobOptions) {
                 try {
-                  await createJob(created, jobOptions.client)
+                  await createJob(created, jobOptions.client, jobOptions.cities)
                   showToast('Job created with its folder in the client’s folder.')
                 } catch (err) {
                   showToast(`Event saved, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -450,7 +481,9 @@ export function CalendarScreen({ name, username }: { name: string; username: str
             name={sheet.name}
             onClose={closeSheet}
             onOpenEvent={(e) => openEvent(e.id, e)}
-            onOpenFolder={(f) => pushSheet({ kind: 'files', root: f, title: sheet.name, rootLabel: sheet.name })}
+            onOpenFolder={(f, city) =>
+              pushSheet({ kind: 'files', root: f, title: city ? `${sheet.name} · ${city}` : sheet.name, rootLabel: city ?? sheet.name })
+            }
             onScheduleJob={(c) => pushSheet({ kind: 'findTime', client: c })}
           />
         )
@@ -465,17 +498,17 @@ export function CalendarScreen({ name, username }: { name: string; username: str
           <MakeJobSheet
             event={ev}
             onClose={closeSheet}
-            onCreate={async (client) => {
-              await createJob(ev, client)
+            onCreate={async (client, cities) => {
+              await createJob(ev, client, cities)
               closeSheet()
             }}
-            onUseExisting={(client) =>
+            onUseExisting={(client, cities) =>
               pushSheet({
                 kind: 'picker',
                 mode: 'folder',
                 title: 'Choose the job folder',
                 onPick: async (ref) => {
-                  await createJob(ev, client, ref)
+                  await createJob(ev, client, cities, ref)
                   closeSheets(2) // picker + "make job"
                 },
               })
@@ -743,8 +776,6 @@ function SheetLoading() {
     <div className="fixed inset-x-0 bottom-0 z-40 mx-auto h-40 max-w-lg animate-pulse rounded-t-2xl bg-surface shadow-xl" aria-label="Loading" />
   )
 }
-
-const slotsStart = (slots: Suggestion['slots']) => slots[0].start
 
 function StatusBanner({ status, onRetry }: { status: SyncStatus; onRetry: () => void }) {
   if (status.kind !== 'offline' && status.kind !== 'error') return null

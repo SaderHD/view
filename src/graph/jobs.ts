@@ -1,9 +1,9 @@
 import { toDate } from '../calendar/time'
 import type { CalEvent } from '../calendar/types'
 import { ensureClientFolder, getClients, matchClient } from '../clients/clients'
-import { JOB_SUBFOLDERS, newJobId, type JobInfo, type JobStatus } from '../jobs/types'
+import { CLIENTS_ROOT, JOB_SUBFOLDERS, newJobId, type JobInfo, type JobStatus } from '../jobs/types'
 import { graph, GraphError } from './client'
-import { createFolder, toRef, type DriveRef } from './drive'
+import { createFolder, ensureFolderPath, safeName, toRef, type DriveRef } from './drive'
 
 /** Open-extension name used to store job info on Outlook events. */
 export const JOB_EXT = 'com.saderhd.view.job'
@@ -19,6 +19,7 @@ interface JobExt {
   status?: string
   folderJson?: string
   linksJson?: string
+  citiesJson?: string
 }
 
 function parseJson<T>(s: string | undefined, fallback: T): T {
@@ -35,6 +36,7 @@ export function parseJobExt(ext: JobExt | undefined): JobInfo | null {
     jobId: ext.jobId,
     customer: ext.customer ?? '',
     status: (ext.status as JobStatus) || 'scheduled',
+    cities: parseJson<string[]>(ext.citiesJson, []),
     folder: parseJson<DriveRef | null>(ext.folderJson, null),
     links: parseJson<DriveRef[]>(ext.linksJson, []),
   }
@@ -68,6 +70,7 @@ export async function saveJob(eventId: string, job: JobInfo, exists: boolean): P
     status: job.status,
     folderJson: JSON.stringify(job.folder),
     linksJson: JSON.stringify(job.links),
+    citiesJson: JSON.stringify(job.cities),
   }
   if (exists) {
     await graph(`${extPath(eventId)}/${JOB_EXT}`, { method: 'PATCH', body: JSON.stringify(body) })
@@ -89,13 +92,17 @@ export function jobFolderName(title: string): string {
 }
 
 /**
- * Create a job folder inside its client's folder (with Reports / Receipts /
- * Photos): View/Clients/<client>/<job title>/. If the client already has a
- * job with that name, OneDrive adds a number ("Generator repair 1").
+ * Create a job folder (with Reports / Receipts / Photos) inside its client's
+ * folder, under the city when there is one:
+ * View/Clients/<client>/<city>/<job title>/. If that place already has a job
+ * with the same name, OneDrive adds a number ("Generator repair 1").
  */
-export async function createJobFolder(client: string, title: string): Promise<DriveRef> {
+export async function createJobFolder(client: string, city: string, title: string): Promise<DriveRef> {
   const clientFolder = await ensureClientFolder(client)
-  const folder = await createFolder(clientFolder.driveId, clientFolder.id, jobFolderName(title), 'rename')
+  const parent = city.trim()
+    ? await ensureFolderPath([...CLIENTS_ROOT, clientFolder.name, safeName(city.trim())])
+    : clientFolder
+  const folder = await createFolder(parent.driveId, parent.id, jobFolderName(title), 'rename')
   await Promise.all(JOB_SUBFOLDERS.map((sub) => createFolder(folder.driveId, folder.id, sub, 'fail').catch(() => null)))
   return toRef(folder)
 }
@@ -107,14 +114,16 @@ export async function createJobFolder(client: string, title: string): Promise<Dr
  */
 export async function makeJob(
   event: CalEvent,
-  options: { client: string; existingFolder?: DriveRef; jobId?: string; folderTitle?: string },
+  options: { client: string; cities?: string[]; existingFolder?: DriveRef; jobId?: string; folderTitle?: string },
 ): Promise<{ job: JobInfo; categories: string[] }> {
   // Use an existing client's exact spelling when the typed name matches one.
   const client = matchClient(options.client, getClients())
-  const folder = options.existingFolder ?? (await createJobFolder(client, options.folderTitle ?? event.title))
+  const cities = (options.cities ?? []).map((c) => c.trim()).filter(Boolean)
+  const folder = options.existingFolder ?? (await createJobFolder(client, cities[0] ?? '', options.folderTitle ?? event.title))
   const job: JobInfo = {
     jobId: options.jobId ?? newJobId(toDate(event.start)),
     customer: client,
+    cities,
     status: 'scheduled',
     folder,
     links: [],

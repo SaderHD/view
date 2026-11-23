@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CalEvent } from '../calendar/types'
-import { freeTimeByDay, subtract, suggestSlots, zipOf, type JobRequest } from './scheduler'
+import { allocateStops, freeTimeByDay, sharedCity, subtract, suggestSlots, type JobRequest } from './scheduler'
 import {
   blocksFor,
   copyPreviousWeek,
@@ -42,7 +42,7 @@ const req = (r: Partial<JobRequest>): JobRequest => ({
   preferred: 'any',
   allowSplit: false,
   urgent: false,
-  location: '',
+  cities: [],
   ...r,
 })
 const settings: Settings = {
@@ -162,9 +162,9 @@ describe('suggestions', () => {
     expect(best.reasons).toContain('Afternoon')
   })
 
-  it('prefers a day with a nearby job (same ZIP)', () => {
-    const events = [ev(at(2, 7), at(2, 9), { title: 'Smith roof', categories: ['Job'], location: '1 Oak St, Springfield 62704' })]
-    const [best] = suggestSlots(req({ location: '9 Elm St 62704' }), events, settings, { now: MON })
+  it('prefers a day with another job in the same city', () => {
+    const events = [ev(at(2, 7), at(2, 9), { title: 'Smith roof', categories: ['Job'], location: 'Springfield' })]
+    const [best] = suggestSlots(req({ cities: ['springfield'] }), events, settings, { now: MON })
     expect(best.slots[0].start.getDate()).toBe(25)
     expect(best.reasons.join(' ')).toContain('Smith roof')
   })
@@ -194,8 +194,48 @@ describe('suggestions', () => {
     expect(suggestSlots(req({ durationMinutes: 12 * 60 }), [], settings, { now: MON })).toEqual([])
   })
 
-  it('reads ZIP codes', () => {
-    expect(zipOf('412 Oak St, Springfield, IL 62704-1234')).toBe('62704')
-    expect(zipOf('Home Depot')).toBeNull()
+  it('matches cities from job info or multi-stop locations', () => {
+    const multi = ev(at(0, 7), at(0, 9), { location: 'Austin → Dallas' })
+    expect(sharedCity(['Dallas'], multi)).toBe('Dallas')
+    expect(sharedCity(['Houston'], multi)).toBeNull()
+    const job = ev(at(0, 7), at(0, 9), {
+      location: 'somewhere',
+      job: { jobId: 'J', customer: 'Oracle', cities: ['Plano'], status: 'scheduled', folder: null, links: [] },
+    })
+    expect(sharedCity(['plano'], job)).toBe('plano')
+  })
+})
+
+describe('multi-location jobs', () => {
+  const stops = [
+    { city: 'Austin', minutes: 120 },
+    { city: 'Dallas', minutes: 90 },
+  ]
+  it('books stops back to back in one slot', () => {
+    const segs = allocateStops([{ start: at(0, 8), end: at(0, 11, 30) }], stops)
+    expect(segs.map((s) => [s.city, hm(s.start), hm(s.end)])).toEqual([
+      ['Austin', '8:00', '10:00'],
+      ['Dallas', '10:00', '11:30'],
+    ])
+  })
+  it('continues a stop in the next slot when split across days', () => {
+    const segs = allocateStops(
+      [
+        { start: at(0, 13), end: at(0, 15) },
+        { start: at(1, 7), end: at(1, 8, 30) },
+      ],
+      [{ city: 'Austin', minutes: 150 }, { city: 'Dallas', minutes: 60 }],
+    )
+    expect(segs.map((s) => [s.city, s.start.getDate(), hm(s.start), hm(s.end)])).toEqual([
+      ['Austin', 23, '13:00', '15:00'],
+      ['Austin', 24, '7:00', '7:30'],
+      ['Dallas', 24, '7:30', '8:30'],
+    ])
+  })
+  it('finds one slot for the total time of all stops', () => {
+    const [best] = suggestSlots(req({ durationMinutes: 210, cities: ['Austin', 'Dallas'] }), [], settings, { now: MON })
+    const segs = allocateStops(best.slots, stops)
+    expect(segs).toHaveLength(2)
+    expect(segs[1].start).toEqual(segs[0].end)
   })
 })

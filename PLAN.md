@@ -23,7 +23,7 @@ web app (PWA) that lives on your home screen.
 | G5 | Set work hours, which can differ week to week | A default weekly template plus per-week overrides |
 | G6 | Type in a job and auto-schedule it | Finds the best open slots within your work hours |
 | G7 | Search everything | Jobs, dates, clients/locations, file names |
-| G8 | Organize by client | Each client has a folder; its jobs are folders inside it |
+| G8 | Organize by client and city | Client folder → city folders → job folders; one job can cover several cities |
 
 **Not in scope (for now):** multi-user support, Play Store release, invoicing or
 accounting, and offline editing of calendar events (offline *viewing* and queued
@@ -58,7 +58,7 @@ uploads are in scope).
   - Job-to-folder links are stored as a hidden *open extension* on each event
     (`com.saderhd.view.job`). The OneDrive folder link is also written into the
     event body so you can still find it from regular Outlook.
-  - Files go in OneDrive under `View/Clients/<client>/<job>/…`.
+  - Files go in OneDrive under `View/Clients/<client>/<city>/<job>/…`.
   - Settings and work hours are stored in a JSON file in OneDrive
     (`View/view-settings.json`), so they survive reinstalling the app or
     changing phones.
@@ -151,11 +151,17 @@ A **job** is a calendar event with View's extension on it:
 }
 ```
 
-- **Folder convention (organized by client):**
-  `OneDrive/View/Clients/<Client>/<Job title>/` with subfolders `Reports/`,
-  `Receipts/`, `Photos/`. For example, `View/Clients/X Water Company/Fix electricity/`
-  and `View/Clients/X Water Company/Generator repair/`. A job with no client
-  goes under `General`. Repeated job names get a number ("Generator repair 1").
+- **Folder convention (organized by client, then city):**
+  `OneDrive/View/Clients/<Client>/<City>/<Job title>/` with subfolders `Reports/`,
+  `Receipts/`, `Photos/`. For example, `View/Clients/Oracle/Austin/Window cleaning/`
+  and `View/Clients/Oracle/Dallas/HVAC check/`. No city → directly in the client
+  folder; no client → `General`. Repeated job names get a number.
+- **City box:** typed by hand; suggests only cities used before (remembered in
+  the settings file), never a list of every city.
+- **Multi-location jobs:** one job can have several stops (city + time at each),
+  booked back to back. Each stop is its own calendar event ("Deep clean – Austin",
+  "Deep clean – Dallas") so you can see where you are when; all stops share one
+  job number and one folder, which lives under the first city.
 - **Client picker:** choose an existing client (from the folders under
   `View/Clients`) or type a new one; a typed name that matches an existing
   client in different case/spacing reuses that client's folder.
@@ -383,6 +389,13 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - [x] Client picker (existing clients as chips, or type a new one) in Make job, New event and Schedule a job
 - [x] Clients screen: list → client page with upcoming/past jobs, client folder, Schedule job (client pre-filled)
 - [x] Client chip on a job opens that client; search covers client folders
+
+### Locations (client › city › job)
+- [x] Job folders under the city: `View/Clients/<client>/<city>/<job>/`
+- [x] City box with suggestions from cities you've used (stored in `view-settings.json`)
+- [x] Multi-location jobs: stops with their own durations, booked back to back as one job/folder
+- [x] Client page filters by city, with a button for that city's folder
+- [x] Scheduler prefers days with another job in the same city; search matches cities
 
 ### Phase 5: Optional add-ons
 - [ ] Plain-English job entry (Claude API via a small serverless function)
