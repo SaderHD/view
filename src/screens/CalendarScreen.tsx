@@ -17,6 +17,7 @@ import { SheetActiveContext } from '../components/SheetContext'
 import { getEventNotes } from '../graph/calendar'
 import type { DriveRef } from '../graph/drive'
 import { getJob, makeJob, removeJob, saveJob } from '../graph/jobs'
+import { newJobId } from '../jobs/types'
 import { DrivePicker } from '../jobs/DrivePicker'
 import { FilesSheet } from '../jobs/FilesSheet'
 import { JobSection } from '../jobs/JobSection'
@@ -25,6 +26,11 @@ import type { JobInfo } from '../jobs/types'
 import { startQueue, useUploadQueue } from '../uploads/queue'
 import { ShareSheet } from '../uploads/ShareSheet'
 import { UploadQueueSheet } from '../uploads/UploadQueueSheet'
+import { FindTimeSheet, type JobDetails } from '../schedule/FindTimeSheet'
+import { offHoursEvents } from '../schedule/offHours'
+import type { Suggestion } from '../schedule/scheduler'
+import { WorkHoursSheet } from '../schedule/WorkHoursSheet'
+import { loadSettings, useSettings } from '../settings/store'
 import { SettingsSheet } from './SettingsSheet'
 
 type SheetState =
@@ -39,6 +45,8 @@ type SheetState =
   | { kind: 'makeJob'; eventId: string }
   | { kind: 'uploads' }
   | { kind: 'share' }
+  | { kind: 'hours'; date?: Date }
+  | { kind: 'findTime'; date?: Date }
 
 const VIEWS = [
   { id: 'dayGridMonth', label: 'Month' },
@@ -76,6 +84,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   const calendarRef = useRef<FullCalendar>(null)
   const { events, status, loadRange, refresh, create, update, remove, setJob } = useCalendarData()
   const uploads = useUploadQueue()
+  const { settings } = useSettings()
+  const [fabOpen, setFabOpen] = useState(false)
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null)
   const [title, setTitle] = useState('')
   const [view, setView] = useState<ViewId>(savedView)
@@ -114,6 +124,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   // Start sending any queued uploads, and pick up files shared from other apps.
   useEffect(() => {
     void startQueue()
+    void loadSettings()
     const params = new URLSearchParams(location.search)
     const share = params.get('share')
     if (share !== null) {
@@ -166,8 +177,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   }
 
   const fcEvents: EventInput[] = useMemo(
-    () =>
-      events.map((e) => ({
+    () => [
+      ...events.map((e) => ({
         id: e.id,
         title: e.title,
         start: e.start,
@@ -175,8 +186,46 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         allDay: e.allDay,
         classNames: eventClasses(e),
       })),
-    [events],
+      // Shade time outside your work hours.
+      ...(visibleRange ? offHoursEvents(visibleRange.start, visibleRange.end, settings) : []),
+    ],
+    [events, visibleRange, settings],
   )
+
+  /** Book a suggested slot: create the event(s) and the job with its folder. */
+  async function bookJob(details: JobDetails, suggestion: Suggestion) {
+    const parts = suggestion.slots
+    const notes = [details.customer && `Customer: ${details.customer}`, details.notes].filter(Boolean).join('\n')
+    const created: CalEvent[] = []
+    for (const [i, slot] of parts.entries()) {
+      created.push(
+        await create({
+          title: parts.length > 1 ? `${details.title} (${i + 1}/${parts.length})` : details.title,
+          allDay: false,
+          start: slot.start,
+          end: slot.end,
+          location: details.location,
+          notes,
+          showAs: 'busy',
+        }),
+      )
+    }
+    // Events are in Outlook now; close the sheet even if the folder step fails.
+    closeSheet()
+    try {
+      const jobId = newJobId(slotsStart(parts))
+      const first = await makeJob(created[0], { customer: details.customer, jobId })
+      await setJob(created[0].id, first.job, first.categories)
+      for (const ev of created.slice(1)) {
+        const r = await makeJob(ev, { customer: details.customer, jobId, existingFolder: first.job.folder ?? undefined })
+        await setJob(ev.id, r.job, r.categories)
+      }
+      api()?.gotoDate(parts[0].start)
+      showToast(parts.length > 1 ? `Booked ${parts.length} parts with one job folder.` : 'Job booked and folder created.')
+    } catch (err) {
+      showToast(`Booked in Outlook, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
 
   function changeView(v: ViewId) {
     setView(v)
@@ -231,6 +280,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
               const start = d.toDateString() === now.toDateString() ? nextHalfHour(now) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9)
               pushSheet({ kind: 'new', draft: newDraft(start) })
             }}
+            onFindTime={(d) => pushSheet({ kind: 'findTime', date: d })}
+            onEditHours={(d) => pushSheet({ kind: 'hours', date: d })}
           />
         )
 
@@ -334,7 +385,9 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         )
 
       case 'settings':
-        return <SettingsSheet name={name} username={username} onClose={closeSheet} />
+        return (
+          <SettingsSheet name={name} username={username} onClose={closeSheet} onOpenHours={() => pushSheet({ kind: 'hours' })} />
+        )
 
       case 'files':
         return <FilesSheet root={sheet.root} title={sheet.title} onClose={closeSheet} />
@@ -370,6 +423,19 @@ export function CalendarScreen({ name, username }: { name: string; username: str
 
       case 'uploads':
         return <UploadQueueSheet onClose={closeSheet} />
+
+      case 'hours':
+        return <WorkHoursSheet initialDate={sheet.date} onClose={closeSheet} />
+
+      case 'findTime':
+        return (
+          <FindTimeSheet
+            initialEarliest={sheet.date}
+            onClose={closeSheet}
+            onBook={bookJob}
+            onEditHours={() => pushSheet({ kind: 'hours' })}
+          />
+        )
 
       case 'share':
         return (
@@ -497,13 +563,41 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         />
       </div>
 
+      {fabOpen && (
+        <>
+          <button type="button" aria-label="Close menu" className="fixed inset-0 z-30 bg-black/20" onClick={() => setFabOpen(false)} />
+          <div className="fixed bottom-[calc(max(env(safe-area-inset-bottom),1.25rem)+4.25rem)] right-5 z-30 flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFabOpen(false)
+                pushSheet({ kind: 'findTime' })
+              }}
+              className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 font-medium shadow-lg active:bg-surface-2"
+            >
+              <Icon name="briefcase" className="h-5 w-5 text-brand" /> Schedule a job
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFabOpen(false)
+                addEventDefault()
+              }}
+              className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 font-medium shadow-lg active:bg-surface-2"
+            >
+              <Icon name="plus" className="h-5 w-5 text-brand" /> New event
+            </button>
+          </div>
+        </>
+      )}
       <button
         type="button"
-        aria-label="New event"
-        onClick={addEventDefault}
+        aria-label={fabOpen ? 'Close menu' : 'Add'}
+        aria-expanded={fabOpen}
+        onClick={() => setFabOpen((o) => !o)}
         className="fixed bottom-[max(env(safe-area-inset-bottom),1.25rem)] right-5 z-30 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-white shadow-lg active:scale-95"
       >
-        <Icon name="plus" className="h-7 w-7" />
+        <Icon name="plus" className={`h-7 w-7 transition-transform ${fabOpen ? 'rotate-45' : ''}`} />
       </button>
 
       {stack.map((sheet, i) => (
@@ -526,6 +620,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     </div>
   )
 }
+
+const slotsStart = (slots: Suggestion['slots']) => slots[0].start
 
 function StatusBanner({ status, onRetry }: { status: SyncStatus; onRetry: () => void }) {
   if (status.kind !== 'offline' && status.kind !== 'error') return null

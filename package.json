@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "dev:demo": "VITE_DEMO=1 vite"
+    "dev:demo": "VITE_DEMO=1 vite",
+    "test": "vitest run"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.30.0",
@@ -33,6 +34,7 @@
     "typescript": "~7.0.2",
     "vite": "^8.3.6",
     "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.1",
     "workbox-core": "^7.4.1",
     "workbox-precaching": "^7.4.1",
     "workbox-routing": "^7.4.1"

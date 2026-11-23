@@ -59,7 +59,7 @@ uploads are in scope).
     event body so you can still find it from regular Outlook.
   - Files go in OneDrive under `View/Jobs/…`.
   - Settings and work hours are stored in a JSON file in OneDrive
-    (`View/.app/settings.json`), so they survive reinstalling the app or
+    (`View/view-settings.json`), so they survive reinstalling the app or
     changing phones.
 
 ### Tech stack
@@ -201,9 +201,8 @@ Because your hours change from week to week, there are two layers:
    - mark a day as off or PTO.
 
 ```jsonc
-// OneDrive: View/.app/settings.json (excerpt)
+// OneDrive: View/view-settings.json (excerpt)
 {
-  "timezone": "America/Chicago",
   "defaultWeek": {
     "mon": [["07:00","15:30"]], "tue": [["07:00","15:30"]], "wed": [["07:00","15:30"]],
     "thu": [["07:00","15:30"]], "fri": [["07:00","15:30"]], "sat": [], "sun": []
@@ -212,7 +211,7 @@ Because your hours change from week to week, there are two layers:
     "Long week": { "mon": [["06:00","18:00"]], "...": "..." }
   },
   "weekOverrides": {
-    "2026-W48": { "wed": [], "sat": [["08:00","12:00"]] }
+    "2026-11-22": { "wed": [], "sat": [["08:00","12:00"]] }   // keyed by the week's Sunday
   },
   "scheduling": {
     "bufferMinutes": 30,
@@ -356,12 +355,14 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - **Milestone:** tap a date → job → see and add files, all saved in OneDrive.
 
 ### Phase 3: Work hours and smart scheduling
-- [ ] Settings file in OneDrive
-- [ ] Default weekly template + per-week overrides + presets + "copy last week"
-- [ ] Off-hours shading on the calendar
-- [ ] Availability engine + scorer (unit tested)
-- [ ] New Job → suggested slots → one-tap booking
-- [ ] "What fits this day?" on long-press
+- [x] Settings file in OneDrive (`View/view-settings.json`), cached on the phone, synced when back online
+- [x] Default weekly template (split shifts allowed) + per-week overrides + presets + "copy last week" + reset
+- [x] Scheduling rules: buffer around appointments, max job hours per day, look-ahead days
+- [x] Off-hours and days-off shading on the calendar
+- [x] Availability engine + scorer (`src/schedule/`, 22 unit tests, run in CI)
+- [x] "Schedule a job" → ranked suggestions with reasons → one-tap booking (event + job folder);
+      long jobs can be split across days (one shared job folder)
+- [x] Day sheet shows that day's hours and open time, with "Schedule job" for that date
 - **Milestone:** type a job, get the best open times based on that week's hours.
 
 ### Phase 4: Search and polish
