@@ -13,7 +13,18 @@ import { addDays, fmtTime, nextHalfHour, startOfDay } from '../calendar/time'
 import type { CalEvent, EventDraft } from '../calendar/types'
 import { useCalendarData, type SyncStatus } from '../calendar/useCalendarData'
 import { Icon } from '../components/Sheet'
+import { SheetActiveContext } from '../components/SheetContext'
 import { getEventNotes } from '../graph/calendar'
+import type { DriveRef } from '../graph/drive'
+import { getJob, makeJob, removeJob, saveJob } from '../graph/jobs'
+import { DrivePicker } from '../jobs/DrivePicker'
+import { FilesSheet } from '../jobs/FilesSheet'
+import { JobSection } from '../jobs/JobSection'
+import { MakeJobSheet } from '../jobs/MakeJobSheet'
+import type { JobInfo } from '../jobs/types'
+import { startQueue, useUploadQueue } from '../uploads/queue'
+import { ShareSheet } from '../uploads/ShareSheet'
+import { UploadQueueSheet } from '../uploads/UploadQueueSheet'
 import { SettingsSheet } from './SettingsSheet'
 
 type SheetState =
@@ -23,6 +34,11 @@ type SheetState =
   | { kind: 'new'; draft: EventDraft }
   | { kind: 'edit'; id: string; draft: EventDraft; notesEditable: boolean }
   | { kind: 'settings' }
+  | { kind: 'files'; root: DriveRef; title: string }
+  | { kind: 'picker'; mode: 'folder' | 'file'; title: string; onPick: (ref: DriveRef) => Promise<void> }
+  | { kind: 'makeJob'; eventId: string }
+  | { kind: 'uploads' }
+  | { kind: 'share' }
 
 const VIEWS = [
   { id: 'dayGridMonth', label: 'Month' },
@@ -58,7 +74,9 @@ function newDraft(start: Date, allDay = false): EventDraft {
 
 export function CalendarScreen({ name, username }: { name: string; username: string }) {
   const calendarRef = useRef<FullCalendar>(null)
-  const { events, status, loadRange, refresh, create, update, remove } = useCalendarData()
+  const { events, status, loadRange, refresh, create, update, remove, setJob } = useCalendarData()
+  const uploads = useUploadQueue()
+  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null)
   const [title, setTitle] = useState('')
   const [view, setView] = useState<ViewId>(savedView)
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null)
@@ -66,16 +84,46 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   const [fullNotes, setFullNotes] = useState<Record<string, string>>({})
 
   // ── Sheets are tied to browser history so Android's Back button closes them.
+  // Each history entry records how many sheets are open at that point.
+  const stackRef = useRef<SheetState[]>([])
   const pushSheet = useCallback((s: SheetState) => {
-    history.pushState({ sheet: true }, '')
-    setStack((prev) => [...prev, s])
+    stackRef.current = [...stackRef.current, s]
+    history.pushState({ sheets: stackRef.current.length }, '')
+    setStack(stackRef.current)
   }, [])
   const closeSheet = useCallback(() => history.back(), [])
+  /** Close the top `n` sheets at once (e.g. a picker and the sheet that opened it). */
+  const closeSheets = useCallback((n: number) => history.go(-n), [])
   useEffect(() => {
-    const onPop = () => setStack((prev) => prev.slice(0, -1))
+    const onPop = (e: PopStateEvent) => {
+      const depth = typeof e.state?.sheets === 'number' ? e.state.sheets : 0
+      stackRef.current = stackRef.current.slice(0, depth)
+      setStack(stackRef.current)
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+
+  const showToast = useCallback((text: string, error = false) => setToast({ text, error }), [setToast])
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), toast.error ? 7000 : 3500)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  // Start sending any queued uploads, and pick up files shared from other apps.
+  useEffect(() => {
+    void startQueue()
+    const params = new URLSearchParams(location.search)
+    const share = params.get('share')
+    if (share !== null) {
+      history.replaceState(null, '', location.pathname)
+      queueMicrotask(() => {
+        if (share === 'error') showToast("Couldn't receive the shared files. Try again.", true)
+        else pushSheet({ kind: 'share' })
+      })
+    }
+  }, [pushSheet, showToast])
 
   const api = () => calendarRef.current?.getApi()
 
@@ -92,6 +140,29 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   function openEvent(id: string) {
     pushSheet({ kind: 'event', id, snapshot: events.find((e) => e.id === id) })
     void loadNotes(id)
+    // Fresh job info (also covers events loaded while offline).
+    getJob(id).then(
+      (job) => setJob(id, job),
+      () => undefined,
+    )
+  }
+
+  // ── Job actions
+  async function updateJob(ev: CalEvent, patch: Partial<JobInfo>) {
+    if (!ev.job) return
+    const job = { ...ev.job, ...patch }
+    await saveJob(ev.id, job, true)
+    await setJob(ev.id, job)
+  }
+
+  async function createJob(ev: CalEvent, customer: string, existingFolder?: DriveRef) {
+    const { job, categories } = await makeJob(ev, { customer, existingFolder })
+    await setJob(ev.id, job, categories)
+  }
+
+  function openFolder(ref: DriveRef, title: string) {
+    if (ref.isFolder) pushSheet({ kind: 'files', root: ref, title })
+    else window.open(ref.webUrl, '_blank', 'noopener')
   }
 
   const fcEvents: EventInput[] = useMemo(
@@ -144,8 +215,174 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     }
   }
 
-  const top = stack.at(-1)
   const eventById = (id: string) => events.find((e) => e.id === id)
+
+  function renderSheet(sheet: SheetState) {
+    switch (sheet.kind) {
+      case 'day':
+        return (
+          <DaySheet
+            date={sheet.date}
+            events={events}
+            onClose={closeSheet}
+            onOpenEvent={openEvent}
+            onAddEvent={(d) => {
+              const now = new Date()
+              const start = d.toDateString() === now.toDateString() ? nextHalfHour(now) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9)
+              pushSheet({ kind: 'new', draft: newDraft(start) })
+            }}
+          />
+        )
+
+      case 'event': {
+        const ev = eventById(sheet.id) ?? sheet.snapshot
+        if (!ev) return null
+        const notes = fullNotes[ev.id]
+        return (
+          <EventDetail
+            event={notes === undefined ? ev : { ...ev, notes }}
+            onClose={closeSheet}
+            onEdit={async () => {
+              const text = notes ?? (await loadNotes(ev.id))
+              const draft = { ...eventToDraft(ev), notes: text ?? ev.notes }
+              pushSheet({ kind: 'edit', id: ev.id, draft, notesEditable: text !== undefined })
+            }}
+            onDelete={async () => {
+              await remove(ev.id)
+              closeSheet()
+            }}
+            extra={
+              <JobSection
+                job={ev.job}
+                editable={ev.isOrganizer}
+                onMakeJob={() => pushSheet({ kind: 'makeJob', eventId: ev.id })}
+                onOpenFolder={(f) => openFolder(f, ev.title)}
+                onOpenLink={(l) => openFolder(l, l.name)}
+                onAttach={() =>
+                  pushSheet({
+                    kind: 'picker',
+                    mode: 'file',
+                    title: 'Attach a file',
+                    onPick: async (ref) => {
+                      const current = eventById(ev.id)?.job
+                      if (!current) return
+                      if (!current.links.some((l) => l.itemId === ref.itemId)) {
+                        await updateJob({ ...ev, job: current }, { links: [...current.links, ref] })
+                      }
+                      closeSheet()
+                    },
+                  })
+                }
+                onChangeFolder={() =>
+                  pushSheet({
+                    kind: 'picker',
+                    mode: 'folder',
+                    title: 'Choose the job folder',
+                    onPick: async (ref) => {
+                      const current = eventById(ev.id)?.job
+                      if (current) await updateJob({ ...ev, job: current }, { folder: ref })
+                      closeSheet()
+                    },
+                  })
+                }
+                onRemoveLink={(link) => updateJob(ev, { links: (ev.job?.links ?? []).filter((l) => l.itemId !== link.itemId) })}
+                onStatus={(status) => updateJob(ev, { status })}
+                onRemoveJob={async () => {
+                  await removeJob(ev)
+                  await setJob(ev.id, null, ev.categories.filter((c) => c.toLowerCase() !== 'job'))
+                }}
+              />
+            }
+          />
+        )
+      }
+
+      case 'new':
+        return (
+          <EventForm
+            mode="new"
+            initial={sheet.draft}
+            onClose={closeSheet}
+            onSave={async (draft, _notesChanged, jobOptions) => {
+              const created = await create(draft)
+              closeSheet()
+              if (jobOptions) {
+                try {
+                  await createJob(created, jobOptions.customer)
+                  showToast('Job created with its OneDrive folder.')
+                } catch (err) {
+                  showToast(`Event saved, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
+                }
+              }
+            }}
+          />
+        )
+
+      case 'edit':
+        return (
+          <EventForm
+            mode="edit"
+            initial={sheet.draft}
+            notesEditable={sheet.notesEditable}
+            onClose={closeSheet}
+            onSave={async (draft, notesChanged) => {
+              await update(sheet.id, draft, notesChanged)
+              if (notesChanged) setFullNotes((n) => ({ ...n, [sheet.id]: draft.notes }))
+              closeSheet()
+            }}
+          />
+        )
+
+      case 'settings':
+        return <SettingsSheet name={name} username={username} onClose={closeSheet} />
+
+      case 'files':
+        return <FilesSheet root={sheet.root} title={sheet.title} onClose={closeSheet} />
+
+      case 'picker':
+        return <DrivePicker mode={sheet.mode} title={sheet.title} onPick={sheet.onPick} onClose={closeSheet} />
+
+      case 'makeJob': {
+        const ev = eventById(sheet.eventId)
+        if (!ev) return null
+        return (
+          <MakeJobSheet
+            event={ev}
+            onClose={closeSheet}
+            onCreate={async (customer) => {
+              await createJob(ev, customer)
+              closeSheet()
+            }}
+            onUseExisting={(customer) =>
+              pushSheet({
+                kind: 'picker',
+                mode: 'folder',
+                title: 'Choose the job folder',
+                onPick: async (ref) => {
+                  await createJob(ev, customer, ref)
+                  closeSheets(2) // picker + "make job"
+                },
+              })
+            }
+          />
+        )
+      }
+
+      case 'uploads':
+        return <UploadQueueSheet onClose={closeSheet} />
+
+      case 'share':
+        return (
+          <ShareSheet
+            onClose={closeSheet}
+            onQueued={(n) => {
+              closeSheet()
+              showToast(`Uploading ${n} file${n === 1 ? '' : 's'} to OneDrive…`)
+            }}
+          />
+        )
+    }
+  }
 
   return (
     <div className="flex h-dvh flex-col">
@@ -172,6 +409,23 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         >
           <Icon name="refresh" className={`h-5 w-5 ${status.kind === 'syncing' ? 'animate-spin' : ''}`} />
         </button>
+        {uploads.length > 0 && (
+          <button
+            type="button"
+            aria-label={`${uploads.length} uploads`}
+            onClick={() => pushSheet({ kind: 'uploads' })}
+            className="relative rounded-full p-2 text-brand active:bg-surface-2"
+          >
+            <Icon name="upload" />
+            <span
+              className={`absolute right-0.5 top-0.5 min-w-4 rounded-full px-1 text-center text-[0.65rem] font-bold leading-4 text-white ${
+                uploads.some((u) => u.status === 'failed') ? 'bg-danger' : 'bg-brand'
+              }`}
+            >
+              {uploads.length}
+            </span>
+          </button>
+        )}
         <button
           type="button"
           aria-label="Settings"
@@ -252,69 +506,23 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         <Icon name="plus" className="h-7 w-7" />
       </button>
 
-      {top?.kind === 'day' && (
-        <DaySheet
-          date={top.date}
-          events={events}
-          onClose={closeSheet}
-          onOpenEvent={openEvent}
-          onAddEvent={(d) => {
-            const now = new Date()
-            const start = d.toDateString() === now.toDateString() ? nextHalfHour(now) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9)
-            pushSheet({ kind: 'new', draft: newDraft(start) })
-          }}
-        />
+      {stack.map((sheet, i) => (
+        <SheetActiveContext.Provider key={i} value={i === stack.length - 1}>
+          {renderSheet(sheet)}
+        </SheetActiveContext.Provider>
+      ))}
+
+      {toast && (
+        <div
+          role="status"
+          className={`fixed inset-x-4 bottom-24 z-50 mx-auto max-w-md rounded-xl px-4 py-3 text-sm shadow-lg ${
+            toast.error ? 'bg-danger text-white' : 'bg-text text-bg'
+          }`}
+          onClick={() => setToast(null)}
+        >
+          {toast.text}
+        </div>
       )}
-
-      {top?.kind === 'event' &&
-        (() => {
-          const ev = eventById(top.id) ?? top.snapshot
-          if (!ev) return null
-          const notes = fullNotes[ev.id]
-          return (
-            <EventDetail
-              event={notes === undefined ? ev : { ...ev, notes }}
-              onClose={closeSheet}
-              onEdit={async () => {
-                const text = notes ?? (await loadNotes(ev.id))
-                const draft = { ...eventToDraft(ev), notes: text ?? ev.notes }
-                pushSheet({ kind: 'edit', id: ev.id, draft, notesEditable: text !== undefined })
-              }}
-              onDelete={async () => {
-                await remove(ev.id)
-                closeSheet()
-              }}
-            />
-          )
-        })()}
-
-      {top?.kind === 'new' && (
-        <EventForm
-          mode="new"
-          initial={top.draft}
-          onClose={closeSheet}
-          onSave={async (draft) => {
-            await create(draft)
-            closeSheet()
-          }}
-        />
-      )}
-
-      {top?.kind === 'edit' && (
-        <EventForm
-          mode="edit"
-          initial={top.draft}
-          notesEditable={top.notesEditable}
-          onClose={closeSheet}
-          onSave={async (draft, notesChanged) => {
-            await update(top.id, draft, notesChanged)
-            if (notesChanged) setFullNotes((n) => ({ ...n, [top.id]: draft.notes }))
-            closeSheet()
-          }}
-        />
-      )}
-
-      {top?.kind === 'settings' && <SettingsSheet name={name} username={username} onClose={closeSheet} />}
     </div>
   )
 }

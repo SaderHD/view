@@ -1,6 +1,7 @@
 import type { CalEvent, EventDraft, ShowAs } from '../calendar/types'
 import { addDays, dateKey, deviceTimeZone, fromGraphLocal, startOfDay, toGraphLocal } from '../calendar/time'
-import { graph } from './client'
+import { graph, GraphError } from './client'
+import { JOB_EXT_ID, jobFromExtensions } from './jobs'
 
 /** The shape Graph returns for the fields we $select. */
 interface GraphEvent {
@@ -18,6 +19,7 @@ interface GraphEvent {
   isCancelled?: boolean
   type?: CalEvent['type']
   webLink?: string
+  extensions?: { id?: string; extensionName?: string }[]
 }
 
 const SELECT = [
@@ -46,6 +48,7 @@ export function fromGraph(e: GraphEvent): CalEvent {
     isCancelled: e.isCancelled ?? false,
     type: e.type ?? 'singleInstance',
     webLink: e.webLink ?? '',
+    job: e.extensions ? jobFromExtensions(e.extensions) : undefined,
   }
 }
 
@@ -53,7 +56,22 @@ export function fromGraph(e: GraphEvent): CalEvent {
  * All events overlapping [start, end), with repeating events expanded into
  * individual occurrences. Follows paging so nothing is missed.
  */
+/** Set if this tenant rejects $expand=extensions on calendarView; jobs then load per event. */
+let expandUnsupported = false
+
 export async function listEvents(start: Date, end: Date): Promise<CalEvent[]> {
+  try {
+    return await listEventsWith(start, end, !expandUnsupported)
+  } catch (err) {
+    if (!expandUnsupported && err instanceof GraphError && err.status === 400) {
+      expandUnsupported = true
+      return listEventsWith(start, end, false)
+    }
+    throw err
+  }
+}
+
+async function listEventsWith(start: Date, end: Date, withJobs: boolean): Promise<CalEvent[]> {
   const params = new URLSearchParams({
     startDateTime: start.toISOString(),
     endDateTime: end.toISOString(),
@@ -61,6 +79,8 @@ export async function listEvents(start: Date, end: Date): Promise<CalEvent[]> {
     $orderby: 'start/dateTime',
     $top: '250',
   })
+  // Include the hidden job info on each event, so jobs show up without extra requests.
+  if (withJobs) params.set('$expand', `extensions($filter=id eq '${JOB_EXT_ID}')`)
   const out: CalEvent[] = []
   let url: string | undefined = `/me/calendarView?${params}`
   while (url) {

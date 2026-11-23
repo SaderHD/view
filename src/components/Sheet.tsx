@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useSheetActive } from './SheetContext'
 
 /**
  * Bottom sheet. Closing is handled by the caller (the calendar screen ties
@@ -9,20 +10,31 @@ export function Sheet({
   onClose,
   children,
   footer,
+  active: activeProp,
 }: {
   title: ReactNode
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** Only the top sheet is shown and reacts to Escape; sheets underneath stay mounted. */
+  active?: boolean
 }) {
+  const fromStack = useSheetActive()
+  const active = activeProp ?? fromStack
   useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, active])
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center" role="dialog" aria-modal="true">
+    <div
+      className={`fixed inset-0 z-40 flex items-end justify-center ${active ? '' : 'hidden'}`}
+      role="dialog"
+      aria-modal="true"
+      aria-hidden={!active}
+    >
       <button
         type="button"
         aria-label="Close"
@@ -67,6 +79,18 @@ const ICONS = {
   external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
   chevronLeft: 'M15 6l-6 6 6 6',
   chevronRight: 'M9 6l6 6-6 6',
+  folder: 'M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z',
+  file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
+  camera: 'M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 9.5h.01',
+  upload: 'M12 16V4M7 9l5-5 5 5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  briefcase: 'M4 8h16v11H4zM9 8V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+  check: 'M5 12l5 5 9-10',
+  cloud: 'M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z',
+  folderPlus: 'M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5zM12 10.5v5M9.5 13h5',
 } as const
 
 export type IconName = keyof typeof ICONS

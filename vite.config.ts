@@ -17,6 +17,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Custom service worker (src/sw/sw.ts) so the app can receive Android shares.
+      strategies: 'injectManifest',
+      srcDir: 'src/sw',
+      filename: 'sw.ts',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'View',
@@ -33,11 +40,18 @@ export default defineConfig({
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
-      },
-      workbox: {
-        // Only the app's own files are cached. Microsoft sign-in and Graph
-        // API calls are cross-origin and always go to the network.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        // Shows "View" in Android's Share menu for photos, PDFs and other files.
+        share_target: {
+          action: `${base}share-target`,
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [{ name: 'files', accept: ['image/*', 'video/*', 'application/pdf', '*/*'] }],
+          },
+        },
       },
     }),
   ],
