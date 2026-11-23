@@ -31,12 +31,16 @@ function msal(): PublicClientApplication {
   return instance
 }
 
+const DEMO = import.meta.env.VITE_DEMO === '1'
+
 export function getAccount() {
+  if (DEMO) return { name: 'Demo User', username: 'demo@example.com' }
   return instance?.getActiveAccount() ?? null
 }
 
 /** Initialise MSAL and finish any sign-in redirect that just came back. */
 export async function initAuth(): Promise<void> {
+  if (DEMO) return
   await msal().initialize()
 
   msal().addEventCallback((event) => {
@@ -59,7 +63,8 @@ export function signIn(): Promise<void> {
   return msal().loginRedirect({ scopes: graphScopes, prompt: 'select_account' })
 }
 
-export function signOut(): Promise<void> {
+export async function signOut(): Promise<void> {
+  if (DEMO) return location.reload()
   return msal().logoutRedirect({ account: msal().getActiveAccount() })
 }
 
@@ -69,6 +74,7 @@ export function signOut(): Promise<void> {
  * again or approve new permissions.
  */
 export async function getGraphToken(): Promise<string> {
+  if (DEMO) return 'demo'
   const account = msal().getActiveAccount()
   if (!account) throw new Error('Not signed in')
   try {

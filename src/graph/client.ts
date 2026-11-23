@@ -15,6 +15,10 @@ export class GraphError extends Error {
 
 /** Minimal authenticated fetch wrapper for Microsoft Graph. */
 export async function graph<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (import.meta.env.VITE_DEMO === '1') {
+    const { handle } = await import('../demo/fakeGraph')
+    return (await handle(path, init)) as T
+  }
   const token = await getGraphToken()
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${token}`)
