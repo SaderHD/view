@@ -1,7 +1,7 @@
 # View — Project Plan
 
 A personal, calendar-first organization app for Android. It runs on top of your
-**Outlook calendar** and **OneDrive** (Microsoft 365 work account). You tap a
+**Outlook calendar** and **OneDrive** (personal Microsoft account, @outlook.com). You tap a
 date, see the jobs on it, open a job's folder of reports, receipts and photos,
 and upload new files from your phone straight to OneDrive. You can type in a new
 job and the app finds the best open slots based on the work hours you've set
@@ -80,17 +80,19 @@ uploads are in scope).
 
 ## 3. Microsoft 365 / Entra ID setup (one-time)
 
-You're on an **enterprise (work) tenant**, so the app is registered inside your
-company's Entra ID (Azure AD).
+Your Outlook is a **personal Microsoft account** (@outlook.com), so the app is
+registered for *personal Microsoft accounts* and signs in through the
+`consumers` endpoint. (A company Microsoft 365 account would instead use a
+single-tenant registration and the directory's tenant ID; see docs/SETUP.md.)
 
 1. Go to **https://entra.microsoft.com** → *Applications* → *App registrations* → **New registration**.
 2. Fill in:
    - **Name:** `View`
-   - **Supported account types:** *Accounts in this organizational directory only (single tenant)*
+   - **Supported account types:** *Personal Microsoft accounts only*
    - **Redirect URI:** platform **Single-page application (SPA)**, then add:
      - `http://localhost:5173` (for development)
      - `https://saderhd.github.io/view/` (or the final hosting URL)
-3. Copy the **Application (client) ID** and **Directory (tenant) ID**. These go
+3. Copy the **Application (client) ID**; the tenant setting is `consumers`. These go
    in the app's config. They aren't secrets, and no client secret is needed.
 4. Under **API permissions** → *Microsoft Graph* → **Delegated**, add:
 
@@ -104,15 +106,8 @@ company's Entra ID (Azure AD).
    Optional, later: `Calendars.ReadWrite.Shared` (only if you want shared or
    other calendars) and `Sites.ReadWrite.All` (only if job files ever need to
    live in SharePoint or Teams sites instead of your OneDrive).
-5. **Consent:** if your tenant lets users consent to apps themselves, you'll just
-   approve the permissions on first sign-in. If not, an admin has to click
-   **Grant admin consent** on the API permissions page. `Files.ReadWrite.All`
-   is the permission most often blocked.
-6. **Things that could get in the way:**
-   - *Conditional Access* policies (e.g. "only compliant devices") may block
-     sign-in from a browser on your phone. If so, IT can exclude this app or
-     your device.
-   - Some tenants restrict OneDrive access from unmanaged devices.
+5. **Consent:** with a personal account there's no admin. You approve the
+   permissions yourself the first time you sign in.
 
 All of this happens in Microsoft's portal, not in code. I'll walk you through it
 when we start Phase 1.
@@ -392,7 +387,7 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - Tokens are stored on the phone only (MSAL cache) and refreshed automatically.
 - No third-party servers. Everything goes phone ↔ Microsoft (except the
   optional AI add-on, which would go through a function you control).
-- The app is single-tenant: only accounts in your company directory can sign in.
+- Only the account types the app registration allows can sign in (personal Microsoft accounts).
 
 ---
 
@@ -401,7 +396,7 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 | Topic | Decision / question |
 |-------|---------------------|
 | Hosting | **GitHub Pages on a free plan requires the repo to be public.** The code contains no secrets, so a public repo is safe. If you'd rather keep it private, use **Cloudflare Pages** (free, works with private repos) or GitHub Pro. → *Pick one before Phase 0.* |
-| Admin consent | Check whether your tenant allows users to consent to `Files.ReadWrite.All`. If not, ask IT to grant admin consent for the "View" app. |
+| Account type | Personal Microsoft account (@outlook.com) → registration for *Personal Microsoft accounts only*, `VITE_TENANT_ID=consumers`. |
 | Where job files live | Default: your OneDrive under `View/Jobs`. If your team keeps job files in a shared SharePoint or Teams library, that can be supported instead. → *Confirm.* |
 | Folder naming | Default `YYYY-MM-DD - Customer - Title`. → *Change if you have an existing convention.* |
 | Which calendar | Default: your primary Outlook calendar. Other or shared calendars can be added. |
