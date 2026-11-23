@@ -43,7 +43,7 @@ export function SignInScreen({ error }: { error?: string }) {
         </p>
       )}
 
-      <p className="text-xs text-muted">Signs in with your work account. Your data stays in Microsoft 365.</p>
+      <p className="text-xs text-muted">Sign in with the Microsoft account that has your Outlook calendar. Your data stays with Microsoft.</p>
     </main>
   )
 }

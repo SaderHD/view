@@ -10,6 +10,12 @@
  */
 export const config = {
   clientId: import.meta.env.VITE_CLIENT_ID ?? '',
+  /**
+   * Which accounts can sign in:
+   *  - "consumers" → personal Microsoft accounts (@outlook.com, @hotmail.com, @live.com)
+   *  - a directory (tenant) ID → work/school accounts in that organisation
+   *  - "common" → both (the app registration must allow both)
+   */
   tenantId: import.meta.env.VITE_TENANT_ID ?? '',
   /** Where Microsoft sends you back after sign-in — the app's own URL. */
   redirectUri: new URL(import.meta.env.BASE_URL, window.location.origin).href,

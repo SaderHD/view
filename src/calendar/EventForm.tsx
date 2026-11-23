@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { ClientPicker } from '../clients/ClientPicker'
 import { Sheet } from '../components/Sheet'
 import { SHOW_AS_LABEL } from './eventDisplay'
 import { addDays, combine, dateKey, timeKey, toDate } from './time'
@@ -62,12 +63,12 @@ export function EventForm({
   notesEditable?: boolean
   onClose: () => void
   /** Resolves when saved; rejects with an error to show. jobOptions is set when "This is a job" is on. */
-  onSave: (draft: EventDraft, notesChanged: boolean, jobOptions?: { customer: string }) => Promise<void>
+  onSave: (draft: EventDraft, notesChanged: boolean, jobOptions?: { client: string }) => Promise<void>
 }) {
   const [form, setForm] = useState<FormState>(() => fromDraft(initial))
   const [saving, setSaving] = useState(false)
   const [isJob, setIsJob] = useState(false)
-  const [customer, setCustomer] = useState('')
+  const [client, setClient] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }))
@@ -93,7 +94,7 @@ export function EventForm({
     setSaving(true)
     setError(null)
     try {
-      await onSave(draft, form.notes !== initial.notes, mode === 'new' && isJob ? { customer } : undefined)
+      await onSave(draft, form.notes !== initial.notes, mode === 'new' && isJob ? { client } : undefined)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setSaving(false)
@@ -155,7 +156,7 @@ export function EventForm({
             <label className="flex items-center justify-between px-3 py-2.5">
               <span>
                 This is a job
-                <span className="block text-xs text-muted">Creates a OneDrive folder for its files</span>
+                <span className="block text-xs text-muted">Creates a folder for it inside the client's folder</span>
               </span>
               <input
                 type="checkbox"
@@ -166,12 +167,7 @@ export function EventForm({
             </label>
             {isJob && (
               <div className="border-t border-line px-3 py-2.5">
-                <input
-                  className={input}
-                  placeholder="Customer (optional)"
-                  value={customer}
-                  onChange={(e) => setCustomer(e.target.value)}
-                />
+                <ClientPicker value={client} onChange={setClient} />
               </div>
             )}
           </div>

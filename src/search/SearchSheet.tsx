@@ -6,7 +6,7 @@ import { Icon, Sheet } from '../components/Sheet'
 import { findFolder, searchDrive, type DriveItem } from '../graph/drive'
 import { ItemList } from '../jobs/FilesSheet'
 import { StatusBadge } from '../jobs/StatusBadge'
-import { JOB_STATUSES, JOBS_ROOT, type JobStatus } from '../jobs/types'
+import { CLIENTS_ROOT, JOB_STATUSES, type JobStatus } from '../jobs/types'
 import { searchEvents, type EventFilters } from './searchEvents'
 import { loadSearchIndex, type SearchIndex } from './searchIndex'
 
@@ -14,7 +14,7 @@ const MAX_EVENTS = 100
 const monthYear = (d: Date) => d.toLocaleDateString([], { month: 'short', year: 'numeric' })
 
 /**
- * One search box for jobs, customers, addresses, notes, job numbers and files.
+ * One search box for jobs, clients, addresses, notes, job numbers and files.
  * With "Jobs" on and no text it's a job list you can filter by status.
  */
 export function SearchSheet({
@@ -49,7 +49,7 @@ export function SearchSheet({
     const t = setTimeout(async () => {
       setFiles({ q, items: null })
       try {
-        const within = fileScope === 'jobs' ? await findFolder(JOBS_ROOT) : null
+        const within = fileScope === 'jobs' ? await findFolder(CLIENTS_ROOT) : null
         const items = fileScope === 'jobs' && !within ? [] : await searchDrive(q, within ? { driveId: within.driveId, itemId: within.id } : undefined)
         if (!stale) setFiles({ q, items })
       } catch (err) {
@@ -81,7 +81,7 @@ export function SearchSheet({
           aria-label="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Jobs, customers, addresses, files…"
+          placeholder="Jobs, clients, addresses, files…"
           className="min-w-0 flex-1 bg-transparent text-base outline-none"
           enterKeyHint="search"
         />
@@ -122,7 +122,7 @@ export function SearchSheet({
 
       {!showEvents && (
         <p className="py-6 text-center text-sm text-muted">
-          Search by title, customer, address, notes, job number or status. Turn on <b>Jobs only</b> to list your jobs.
+          Search by title, client, address, notes, job number or status. Turn on <b>Jobs only</b> to list your jobs.
         </p>
       )}
 
@@ -187,7 +187,7 @@ export function SearchSheet({
             <span className="flex gap-1">
               {(['jobs', 'all'] as const).map((s) => (
                 <button key={s} type="button" aria-pressed={fileScope === s} onClick={() => setFileScope(s)} className={`rounded-full px-2.5 py-1 text-xs font-medium ${fileScope === s ? 'bg-brand text-white' : 'bg-surface-2'}`}>
-                  {s === 'jobs' ? 'Job folders' : 'All OneDrive'}
+                  {s === 'jobs' ? 'Client folders' : 'All OneDrive'}
                 </button>
               ))}
             </span>

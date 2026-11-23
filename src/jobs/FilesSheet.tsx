@@ -7,7 +7,18 @@ import { formatSize } from '../uploads/format'
 import { UploadButtons, type PickedFile } from '../uploads/UploadButtons'
 
 /** Browse a job's OneDrive folder, open files, and upload into it. */
-export function FilesSheet({ root, title, onClose }: { root: DriveRef; title: string; onClose: () => void }) {
+export function FilesSheet({
+  root,
+  title,
+  rootLabel = 'Job folder',
+  onClose,
+}: {
+  root: DriveRef
+  title: string
+  /** Name shown for the top folder in the path, e.g. "Job folder" or the client's name. */
+  rootLabel?: string
+  onClose: () => void
+}) {
   const [path, setPath] = useState<DriveRef[]>([root])
   const [items, setItems] = useState<DriveItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,7 +101,7 @@ export function FilesSheet({ root, title, onClose }: { root: DriveRef; title: st
               }}
               className={`rounded px-1 py-0.5 ${i === path.length - 1 ? 'font-semibold' : 'text-brand active:bg-surface-2'}`}
             >
-              {i === 0 ? 'Job folder' : p.name}
+              {i === 0 ? rootLabel : p.name}
             </button>
           </span>
         ))}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { addDays, dateKey, fmtDayShort, fmtTime, startOfDay, toDate } from '../calendar/time'
 import type { CalEvent } from '../calendar/types'
+import { ClientPicker } from '../clients/ClientPicker'
 import { Icon, Sheet } from '../components/Sheet'
 import { listEvents } from '../graph/calendar'
 import { useSettings } from '../settings/store'
@@ -9,6 +10,7 @@ import { suggestSlots, type Suggestion, type TimePref } from './scheduler'
 
 export interface JobDetails {
   title: string
+  /** Client name (folder under View/Clients). */
   customer: string
   location: string
   notes: string
@@ -23,7 +25,9 @@ export function FindTimeSheet({
   onBook,
   onEditHours,
   initialEarliest,
+  initialClient = '',
 }: {
+  initialClient?: string
   initialEarliest?: Date
   onClose: () => void
   onBook: (details: JobDetails, suggestion: Suggestion) => Promise<void>
@@ -31,7 +35,7 @@ export function FindTimeSheet({
 }) {
   const { settings } = useSettings()
   const [today] = useState(() => dateKey(new Date()))
-  const [details, setDetails] = useState<JobDetails>({ title: '', customer: '', location: '', notes: '' })
+  const [details, setDetails] = useState<JobDetails>({ title: '', customer: initialClient, location: '', notes: '' })
   const [duration, setDuration] = useState(120)
   const [customDuration, setCustomDuration] = useState(false)
   const [earliest, setEarliest] = useState(() => dateKey(initialEarliest && initialEarliest > new Date() ? initialEarliest : new Date()))
@@ -124,7 +128,7 @@ export function FindTimeSheet({
       {results === null ? (
         <div className="space-y-4">
           <input className={`${input} text-lg font-medium`} placeholder="Job title, e.g. Roof inspection" value={details.title} onChange={(e) => set('title', e.target.value)} autoFocus />
-          <input className={input} placeholder="Customer" value={details.customer} onChange={(e) => set('customer', e.target.value)} />
+          <ClientPicker value={details.customer} onChange={(v) => set('customer', v)} />
           <input className={input} placeholder="Address (ZIP helps group nearby jobs)" value={details.location} onChange={(e) => set('location', e.target.value)} autoComplete="street-address" />
 
           <Field label="How long will it take?">
@@ -224,7 +228,7 @@ export function FindTimeSheet({
             </ul>
           )}
           <p className="mt-3 text-center text-xs text-muted">
-            Booking adds it to Outlook and creates the job's OneDrive folder.
+            Booking adds it to Outlook and creates the job's folder inside the client's folder.
           </p>
         </div>
       )}

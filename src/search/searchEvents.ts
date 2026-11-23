@@ -36,7 +36,7 @@ function haystack(e: CalEvent): string {
 
 /**
  * Match every word of the query (any order) against title, address, notes,
- * customer, job number and status. Upcoming first (soonest first), then past
+ * client, job number and status. Upcoming first (soonest first), then past
  * (most recent first).
  */
 export function searchEvents(events: CalEvent[], query: string, filters: EventFilters, now = new Date()): CalEvent[] {

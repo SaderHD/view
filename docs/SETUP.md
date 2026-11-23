@@ -35,16 +35,28 @@ pick `SaderHD/view`, and set:
 
 ## 2. Register the app in Microsoft Entra ID
 
-1. Open **https://entra.microsoft.com** and sign in with your work account.
+First, which kind of Microsoft account holds your Outlook calendar?
+
+| Your Outlook address | Account type | Choose under "Supported account types" | `VITE_TENANT_ID` |
+|---|---|---|---|
+| `@outlook.com`, `@hotmail.com`, `@live.com` (or your own domain added to Outlook.com) | **Personal** | *Personal Microsoft accounts only* | `consumers` |
+| Your company's Microsoft 365 (e.g. `you@company.com` managed by IT) | **Work** | *Accounts in this organizational directory only (Single tenant)* | the **Directory (tenant) ID** |
+
+If you pick the wrong one, sign-in fails with **AADSTS50020** ("account … does not
+exist in tenant"). The account type can't easily be changed later, so create a new
+registration instead.
+
+1. Open **https://entra.microsoft.com** and sign in.
 2. Go to **Identity → Applications → App registrations → + New registration**.
    - **Name:** `View`
-   - **Supported account types:** *Accounts in this organizational directory only (Single tenant)*
+   - **Supported account types:** see the table above
    - **Redirect URI:** choose **Single-page application (SPA)** and enter your app URL
      from step 1, e.g. `https://saderhd.github.io/view/` (the trailing `/` matters).
    - Click **Register**.
 3. On the app's **Overview** page, copy:
    - **Application (client) ID** → this is `VITE_CLIENT_ID`
-   - **Directory (tenant) ID** → this is `VITE_TENANT_ID`
+   - For a **work** account: **Directory (tenant) ID** → this is `VITE_TENANT_ID`.
+     For a **personal** account, `VITE_TENANT_ID` is simply `consumers`.
 4. **Authentication** (left menu): under *Single-page application*, also add
    `http://localhost:5173/` so the app can be tested on a computer.
 5. **API permissions** → **+ Add a permission** → **Microsoft Graph** → **Delegated permissions**, then add:
@@ -52,7 +64,7 @@ pick `SaderHD/view`, and set:
    - `Calendars.ReadWrite`
    - `Files.ReadWrite.All`
    - `offline_access`
-6. **Consent:**
+6. **Consent** (personal accounts: skip this; you approve on first sign-in):
    - If you see **Grant admin consent for <your company>** and you're allowed to
      click it, do. All rows should show a green check.
    - If you can't, that's fine. You'll be asked to approve on first sign-in.
@@ -75,7 +87,7 @@ New repository variable** and add:
 | Name | Value |
 |------|-------|
 | `VITE_CLIENT_ID` | Application (client) ID |
-| `VITE_TENANT_ID` | Directory (tenant) ID |
+| `VITE_TENANT_ID` | `consumers` (personal account) or the Directory (tenant) ID (work account) |
 | `PAGES_ENABLED` | `true` (only for option A, once Pages is turned on) |
 
 Then go to **Actions → Build & deploy → Run workflow** (or push to `main`).
@@ -86,7 +98,7 @@ When it finishes, open the app URL. You should see **Sign in with Microsoft**.
 ## 4. Install on Android
 
 1. Open the app URL in **Chrome** on your phone.
-2. Tap **Sign in with Microsoft** and sign in with your work account.
+2. Tap **Sign in with Microsoft** and sign in with the account that has your Outlook calendar.
    Approve the permissions if asked.
 3. The home screen runs a connection check. **Profile**, **Outlook calendar**
    and **OneDrive** should all show a green ✓.
@@ -102,6 +114,7 @@ Updates install automatically the next time you open the app after a deploy.
 | What you see | Fix |
 |--------------|-----|
 | "Almost there", app registration missing | `VITE_CLIENT_ID` / `VITE_TENANT_ID` weren't set when it was built. Add the variables (step 3) and re-run the workflow. |
+| `AADSTS50020` account "does not exist in tenant" | You're signing in with a personal account (@outlook.com etc.) but the registration is for work accounts. Create a registration with *Personal Microsoft accounts only* and set `VITE_TENANT_ID` to `consumers` (step 2). |
 | `AADSTS50011` redirect URI mismatch | The URL in the browser doesn't exactly match a SPA redirect URI in Entra (check `https`, the `/view/` path, and the trailing slash). |
 | `AADSTS65001` / "Need admin approval" | Your tenant blocks user consent. Send IT the request in step 2.6. |
 | `AADSTS53003` / blocked by Conditional Access | Company policy blocks this device or browser. Ask IT to allow the "View" app or your phone. |

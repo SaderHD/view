@@ -9,16 +9,16 @@ import { DaySheet } from '../calendar/DaySheet'
 import { EventDetail } from '../calendar/EventDetail'
 import { EventForm } from '../calendar/EventForm'
 import { eventClasses, eventToDraft } from '../calendar/eventDisplay'
-import { addDays, dateKey, fmtTime, nextHalfHour, startOfDay, toDate } from '../calendar/time'
+import { addDays, fmtTime, nextHalfHour, startOfDay } from '../calendar/time'
 import type { CalEvent, EventDraft } from '../calendar/types'
 import { useCalendarData, type SyncStatus } from '../calendar/useCalendarData'
 import { Icon } from '../components/Sheet'
 import { SheetActiveContext } from '../components/SheetContext'
 import { getEventNotes } from '../graph/calendar'
 import type { DriveRef } from '../graph/drive'
-import { getJob, makeJob, removeJob, saveJob } from '../graph/jobs'
+import { getJob, jobFolderName, makeJob, removeJob, saveJob } from '../graph/jobs'
 import { newJobId } from '../jobs/types'
-import { renameItem } from '../graph/drive'
+import { renameItem, safeName } from '../graph/drive'
 import { haptic } from '../lib/haptics'
 import { JobSection } from '../jobs/JobSection'
 import type { JobInfo } from '../jobs/types'
@@ -37,6 +37,8 @@ const UploadQueueSheet = lazy(() => import('../uploads/UploadQueueSheet').then((
 const WorkHoursSheet = lazy(() => import('../schedule/WorkHoursSheet').then((m) => ({ default: m.WorkHoursSheet })))
 const FindTimeSheet = lazy(() => import('../schedule/FindTimeSheet').then((m) => ({ default: m.FindTimeSheet })))
 const SettingsSheet = lazy(() => import('./SettingsSheet').then((m) => ({ default: m.SettingsSheet })))
+const ClientsSheet = lazy(() => import('../clients/ClientsSheet').then((m) => ({ default: m.ClientsSheet })))
+const ClientSheet = lazy(() => import('../clients/ClientsSheet').then((m) => ({ default: m.ClientSheet })))
 const SearchSheet = lazy(() => import('../search/SearchSheet').then((m) => ({ default: m.SearchSheet })))
 
 type SheetState =
@@ -46,13 +48,15 @@ type SheetState =
   | { kind: 'new'; draft: EventDraft }
   | { kind: 'edit'; id: string; draft: EventDraft; notesEditable: boolean }
   | { kind: 'settings' }
-  | { kind: 'files'; root: DriveRef; title: string }
+  | { kind: 'files'; root: DriveRef; title: string; rootLabel?: string }
   | { kind: 'picker'; mode: 'folder' | 'file'; title: string; onPick: (ref: DriveRef) => Promise<void> }
   | { kind: 'makeJob'; eventId: string }
   | { kind: 'uploads' }
   | { kind: 'share' }
   | { kind: 'hours'; date?: Date }
-  | { kind: 'findTime'; date?: Date }
+  | { kind: 'findTime'; date?: Date; client?: string }
+  | { kind: 'clients' }
+  | { kind: 'client'; name: string }
   | { kind: 'search'; jobsOnly?: boolean }
 
 const VIEWS = [
@@ -173,8 +177,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     await setJob(ev.id, job)
   }
 
-  async function createJob(ev: CalEvent, customer: string, existingFolder?: DriveRef) {
-    const { job, categories } = await makeJob(ev, { customer, existingFolder })
+  async function createJob(ev: CalEvent, client: string, existingFolder?: DriveRef) {
+    const { job, categories } = await makeJob(ev, { client, existingFolder })
     await setJob(ev.id, job, categories)
   }
 
@@ -202,7 +206,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   /** Book a suggested slot: create the event(s) and the job with its folder. */
   async function bookJob(details: JobDetails, suggestion: Suggestion) {
     const parts = suggestion.slots
-    const notes = [details.customer && `Customer: ${details.customer}`, details.notes].filter(Boolean).join('\n')
+    const notes = [details.customer && `Client: ${details.customer}`, details.notes].filter(Boolean).join('\n')
     const created: CalEvent[] = []
     for (const [i, slot] of parts.entries()) {
       created.push(
@@ -221,10 +225,10 @@ export function CalendarScreen({ name, username }: { name: string; username: str
     closeSheet()
     try {
       const jobId = newJobId(slotsStart(parts))
-      const first = await makeJob(created[0], { customer: details.customer, jobId })
+      const first = await makeJob(created[0], { client: details.customer, jobId, folderTitle: details.title })
       await setJob(created[0].id, first.job, first.categories)
       for (const ev of created.slice(1)) {
-        const r = await makeJob(ev, { customer: details.customer, jobId, existingFolder: first.job.folder ?? undefined })
+        const r = await makeJob(ev, { client: details.customer, jobId, existingFolder: first.job.folder ?? undefined })
         await setJob(ev.id, r.job, r.categories)
       }
       api()?.gotoDate(parts[0].start)
@@ -275,18 +279,17 @@ export function CalendarScreen({ name, username }: { name: string; username: str
   const eventById = (id: string) => events.find((e) => e.id === id)
 
   /**
-   * A job moved to another date and its folder name starts with the old
-   * date ("2026-11-24 - Smith - …")? Offer to rename the folder to match.
+   * A job was renamed and its folder still has the old job name? Offer to
+   * rename the folder to match (folders are named after the job).
    */
   function offerFolderRename(before: CalEvent | undefined, after: CalEvent) {
     const folder = before?.job?.folder
     if (!before?.job || !folder) return
-    const oldKey = dateKey(toDate(before.start))
-    const newKey = dateKey(toDate(after.start))
-    if (oldKey === newKey || !folder.name.startsWith(oldKey)) return
-    const newName = newKey + folder.name.slice(oldKey.length)
+    const oldName = safeName(jobFolderName(before.title))
+    const newName = safeName(jobFolderName(after.title))
+    if (oldName === newName || folder.name !== oldName) return
     setToast({
-      text: `Job moved to ${newKey}. Rename its folder to match?`,
+      text: `Job renamed. Rename its folder to “${newName}” too?`,
       action: {
         label: 'Rename folder',
         run: async () => {
@@ -348,6 +351,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
                 onMakeJob={() => pushSheet({ kind: 'makeJob', eventId: ev.id })}
                 onOpenFolder={(f) => openFolder(f, ev.title)}
                 onOpenLink={(l) => openFolder(l, l.name)}
+                onOpenClient={(c) => pushSheet({ kind: 'client', name: c })}
                 onAttach={() =>
                   pushSheet({
                     kind: 'picker',
@@ -401,8 +405,8 @@ export function CalendarScreen({ name, username }: { name: string; username: str
               closeSheet()
               if (jobOptions) {
                 try {
-                  await createJob(created, jobOptions.customer)
-                  showToast('Job created with its OneDrive folder.')
+                  await createJob(created, jobOptions.client)
+                  showToast('Job created with its folder in the client’s folder.')
                 } catch (err) {
                   showToast(`Event saved, but the job folder couldn't be created: ${err instanceof Error ? err.message : String(err)}`, true)
                 }
@@ -435,7 +439,21 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         )
 
       case 'files':
-        return <FilesSheet root={sheet.root} title={sheet.title} onClose={closeSheet} />
+        return <FilesSheet root={sheet.root} title={sheet.title} rootLabel={sheet.rootLabel} onClose={closeSheet} />
+
+      case 'clients':
+        return <ClientsSheet onClose={closeSheet} onOpenClient={(n) => pushSheet({ kind: 'client', name: n })} />
+
+      case 'client':
+        return (
+          <ClientSheet
+            name={sheet.name}
+            onClose={closeSheet}
+            onOpenEvent={(e) => openEvent(e.id, e)}
+            onOpenFolder={(f) => pushSheet({ kind: 'files', root: f, title: sheet.name, rootLabel: sheet.name })}
+            onScheduleJob={(c) => pushSheet({ kind: 'findTime', client: c })}
+          />
+        )
 
       case 'picker':
         return <DrivePicker mode={sheet.mode} title={sheet.title} onPick={sheet.onPick} onClose={closeSheet} />
@@ -447,17 +465,17 @@ export function CalendarScreen({ name, username }: { name: string; username: str
           <MakeJobSheet
             event={ev}
             onClose={closeSheet}
-            onCreate={async (customer) => {
-              await createJob(ev, customer)
+            onCreate={async (client) => {
+              await createJob(ev, client)
               closeSheet()
             }}
-            onUseExisting={(customer) =>
+            onUseExisting={(client) =>
               pushSheet({
                 kind: 'picker',
                 mode: 'folder',
                 title: 'Choose the job folder',
                 onPick: async (ref) => {
-                  await createJob(ev, customer, ref)
+                  await createJob(ev, client, ref)
                   closeSheets(2) // picker + "make job"
                 },
               })
@@ -479,6 +497,7 @@ export function CalendarScreen({ name, username }: { name: string; username: str
         return (
           <FindTimeSheet
             initialEarliest={sheet.date}
+            initialClient={sheet.client}
             onClose={closeSheet}
             onBook={bookJob}
             onEditHours={() => pushSheet({ kind: 'hours' })}
@@ -652,6 +671,16 @@ export function CalendarScreen({ name, username }: { name: string; username: str
               className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 font-medium shadow-lg active:bg-surface-2"
             >
               <Icon name="search" className="h-5 w-5 text-brand" /> All jobs
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFabOpen(false)
+                pushSheet({ kind: 'clients' })
+              }}
+              className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 font-medium shadow-lg active:bg-surface-2"
+            >
+              <Icon name="person" className="h-5 w-5 text-brand" /> Clients
             </button>
           </div>
         </>
