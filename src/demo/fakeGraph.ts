@@ -3,7 +3,7 @@
  * app can be run and tested without a Microsoft 365 sign-in. Never used in
  * normal builds.
  */
-import { addDays, dateKey, startOfDay, toGraphLocal } from '../calendar/time'
+import { addDays, startOfDay, toGraphLocal } from '../calendar/time'
 import { GraphError } from '../graph/client'
 
 interface FakeEvent {
@@ -61,6 +61,8 @@ const store: FakeEvent[] = [
   ev({ subject: 'Vacation', start: at(9, 0), end: at(12, 0), isAllDay: true, showAs: 'oof' }),
   ev({ subject: 'Fence repair – Lee', start: at(6, 10), end: at(6, 13), location: '310 Pine St', categories: ['Job'] }),
   ev({ subject: 'Invoice follow-ups', start: at(5, 8), end: at(5, 9) }),
+  ev({ subject: 'Fix electricity', start: at(4, 10), end: at(4, 12), location: 'X Water Co pump station', categories: ['Job'] }),
+  ev({ subject: 'Generator repair', start: at(-4, 9), end: at(-4, 12), location: 'X Water Co plant', categories: ['Job'] }),
   ev({ subject: 'Kitchen walkthrough – Adams', start: at(8, 14), end: at(8, 15, 30), location: '45 Maple Ave', categories: ['Job'] }),
 ]
 
@@ -101,13 +103,19 @@ const swatch = (color: string, label: string) =>
 const root = addItem(null, 'root', true)
 addItem(root.id, 'Documents', true)
 const viewF = addItem(root.id, 'View', true)
-const jobsF = addItem(viewF.id, 'Jobs', true)
-const smithF = addItem(jobsF.id, `${dateKey(today)} - Smith - Roof inspection`, true)
+const clientsF = addItem(viewF.id, 'Clients', true)
+const smithClient = addItem(clientsF.id, 'Smith', true)
+const smithF = addItem(smithClient.id, 'Roof inspection – Smith', true)
 addItem(smithF.id, 'Reports', true)
 const receipts = addItem(smithF.id, 'Receipts', true)
 const photos = addItem(smithF.id, 'Photos', true)
 addItem(receipts.id, 'Receipt_shingles.jpg', false, { size: 182_000, mime: 'image/jpeg', thumb: swatch('#a16207', '$') })
 addItem(photos.id, 'Chimney_before.jpg', false, { size: 2_400_000, mime: 'image/jpeg', thumb: swatch('#0f766e', 'IMG') })
+const waterCo = addItem(clientsF.id, 'X Water Company', true)
+const electricF = addItem(waterCo.id, 'Fix electricity', true)
+const generatorF = addItem(waterCo.id, 'Generator repair', true)
+for (const f of [electricF, generatorF]) for (const sub of ['Reports', 'Receipts', 'Photos']) addItem(f.id, sub, true)
+addItem(electricF.id, 'Panel wiring report.pdf', false, { size: 210_000, mime: 'application/pdf' })
 const oldJobs = addItem(root.id, 'Old jobs', true)
 const brooks = addItem(oldJobs.id, 'Brooks windows', true)
 addItem(brooks.id, 'Quote.pdf', false, { size: 96_000, mime: 'application/pdf' })
@@ -216,6 +224,18 @@ store[0].ext = {
   folderJson: JSON.stringify({ driveId: DRIVE, itemId: smithF.id, name: smithF.name, webUrl: '', isFolder: true }),
   linksJson: JSON.stringify([]),
 }
+
+const extFor = (jobId: string, client: string, folder: FakeItem, status: string) => ({
+  extensionName: 'com.saderhd.view.job',
+  id: 'Microsoft.OutlookServices.OpenTypeExtension.com.saderhd.view.job',
+  jobId,
+  customer: client,
+  status,
+  folderJson: JSON.stringify({ driveId: DRIVE, itemId: folder.id, name: folder.name, webUrl: '', isFolder: true }),
+  linksJson: JSON.stringify([]),
+})
+store.find((e) => e.subject === 'Fix electricity')!.ext = extFor('J-DEMO-XW1', 'X Water Company', electricF, 'scheduled')
+store.find((e) => e.subject === 'Generator repair')!.ext = extFor('J-DEMO-XW2', 'X Water Company', generatorF, 'done')
 
 const toGraph = (e: FakeEvent, selectBody = false) => ({
   id: e.id,

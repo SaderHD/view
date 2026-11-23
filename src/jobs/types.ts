@@ -16,6 +16,7 @@ export const JOB_STATUSES: { id: JobStatus; label: string }[] = [
  */
 export interface JobInfo {
   jobId: string
+  /** The client's name (stored as "customer" for compatibility). Matches its folder under View/Clients. */
   customer: string
   status: JobStatus
   /** The job's OneDrive folder. */
@@ -27,8 +28,14 @@ export interface JobInfo {
 /** Folders created inside every new job folder. */
 export const JOB_SUBFOLDERS = ['Reports', 'Receipts', 'Photos']
 
-/** Where job folders are created in your OneDrive. */
-export const JOBS_ROOT = ['View', 'Jobs']
+/**
+ * Where client folders live in your OneDrive. Each job gets a folder inside
+ * its client's folder: View/Clients/<client>/<job title>/
+ */
+export const CLIENTS_ROOT = ['View', 'Clients']
+
+/** Used when a job has no client. */
+export const GENERAL_CLIENT = 'General'
 
 /** Short, readable job number, e.g. "J-261124-K7Q". */
 export function newJobId(date: Date): string {

@@ -22,7 +22,8 @@ web app (PWA) that lives on your home screen.
 | G4 | Upload from the phone to the job folder | Camera, gallery, files, and Android's "Share" menu |
 | G5 | Set work hours, which can differ week to week | A default weekly template plus per-week overrides |
 | G6 | Type in a job and auto-schedule it | Finds the best open slots within your work hours |
-| G7 | Search everything | Jobs, dates, customers/locations, file names |
+| G7 | Search everything | Jobs, dates, clients/locations, file names |
+| G8 | Organize by client | Each client has a folder; its jobs are folders inside it |
 
 **Not in scope (for now):** multi-user support, Play Store release, invoicing or
 accounting, and offline editing of calendar events (offline *viewing* and queued
@@ -57,7 +58,7 @@ uploads are in scope).
   - Job-to-folder links are stored as a hidden *open extension* on each event
     (`com.saderhd.view.job`). The OneDrive folder link is also written into the
     event body so you can still find it from regular Outlook.
-  - Files go in OneDrive under `View/Jobs/…`.
+  - Files go in OneDrive under `View/Clients/<client>/<job>/…`.
   - Settings and work hours are stored in a JSON file in OneDrive
     (`View/view-settings.json`), so they survive reinstalling the app or
     changing phones.
@@ -144,14 +145,22 @@ A **job** is a calendar event with View's extension on it:
   "folderItemId": "01ABC…",
   "folderWebUrl": "https://…-my.sharepoint.com/…",
   "status": "scheduled",            // lead | scheduled | in-progress | done | invoiced
-  "customer": "Smith",
+  "customer": "X Water Company",   // the client (folder under View/Clients)
   "estimatedHours": 3,
   "tags": ["roof", "inspection"]
 }
 ```
 
-- **Folder convention:** `OneDrive/View/Jobs/<YYYY-MM-DD> - <Customer> - <Job title>/`
-  with default subfolders `Reports/`, `Receipts/`, `Photos/` (configurable).
+- **Folder convention (organized by client):**
+  `OneDrive/View/Clients/<Client>/<Job title>/` with subfolders `Reports/`,
+  `Receipts/`, `Photos/`. For example, `View/Clients/X Water Company/Fix electricity/`
+  and `View/Clients/X Water Company/Generator repair/`. A job with no client
+  goes under `General`. Repeated job names get a number ("Generator repair 1").
+- **Client picker:** choose an existing client (from the folders under
+  `View/Clients`) or type a new one; a typed name that matches an existing
+  client in different case/spacing reuses that client's folder.
+- **Clients screen:** every client with its upcoming and past jobs, its folder,
+  and "Schedule job" for that client.
 - **Creating a job** creates the event and the folder together and links them.
 - **Link an existing folder:** browse OneDrive in the app and choose a folder to
   link to a job, without moving it.
@@ -163,8 +172,7 @@ A **job** is a calendar event with View's extension on it:
   the OneDrive / Office app or the built-in PDF/image viewer.
 - **Turn an existing appointment into a job:** this adds the extension and
   creates the folder.
-- **If a job is rescheduled to another date**, the app offers to rename the
-  folder so the date prefix matches.
+- **If a job is renamed**, the app offers to rename its folder to match.
 
 ### 4.3 Uploading from the phone (G4)
 - **Upload button on every job:** take a photo (camera), pick from the gallery,
@@ -222,7 +230,7 @@ Because your hours change from week to week, there are two layers:
   Off by default.
 
 ### 4.5 Smart scheduling (G6)
-**Entering a job:** a form with title, customer, location, estimated duration,
+**Entering a job:** a form with title, client, location, estimated duration,
 earliest start, deadline, preferred time of day (morning / afternoon / any),
 whether it can be split across days, and priority.
 
@@ -262,11 +270,11 @@ and costs a few cents per use. It would also need a small serverless function
 so the key isn't exposed in the app. Optional, and done last.
 
 ### 4.6 Search (G7)
-- One search bar for job title, customer, location, notes, job ID and status.
+- One search bar for job title, client, location, notes, job ID and status.
 - Calendar search uses Graph `$search` / `$filter` on events, plus the local
   cache for instant results.
 - File search uses Graph `GET /me/drive/root/search(q='…')`, limited to
-  `View/Jobs`.
+  `View/Clients`.
 - Filters: date range, status, tag.
 
 ---
@@ -339,8 +347,8 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - **Milestone:** your real Outlook calendar on your phone, editable.
 
 ### Phase 2: Jobs, folders and uploads
-- [x] Job model (event + open extension `com.saderhd.view.job`), `Job` category, job ID, customer, status
-- [x] Auto-create job folders (`View/Jobs/<date> - <customer> - <title>`) with Reports / Receipts / Photos
+- [x] Job model (event + open extension `com.saderhd.view.job`), `Job` category, job ID, client, status
+- [x] Auto-create job folders with Reports / Receipts / Photos (now organized by client, see Clients below)
 - [x] "Make this a job" on any of your events, or "This is a job" when creating one
 - [x] OneDrive browser/picker with search; link an existing folder as the job folder; attach extra files
 - [x] Job files screen: subfolders, thumbnails, open in OneDrive/Office, new folder
@@ -361,14 +369,20 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - **Milestone:** type a job, get the best open times based on that week's hours.
 
 ### Phase 4: Search and polish
-- [x] Unified search: title, customer, address, notes, job number, status (six months back to a year ahead,
+- [x] Unified search: title, client, address, notes, job number, status (six months back to a year ahead,
       searched on the phone so it also works offline) plus OneDrive file search (job folders or all OneDrive)
 - [x] Job list ("All jobs") with status and upcoming/past filters; done/invoiced jobs show ✓ on the calendar
-- [x] Moving a job to another date offers to rename its folder's date prefix
+- [x] Renaming a job offers to rename its folder to match
 - [x] Dark mode, haptic feedback on key actions
 - [x] Speed: libraries split into separately cached files (app code ~48 KB), rarely used screens load on demand,
       early connection to Microsoft servers
-- **Milestone:** find any job, customer or file in a couple of taps.
+- **Milestone:** find any job, client or file in a couple of taps.
+
+### Clients (organization by client)
+- [x] Job folders live inside the client's folder: `View/Clients/<client>/<job title>/`
+- [x] Client picker (existing clients as chips, or type a new one) in Make job, New event and Schedule a job
+- [x] Clients screen: list → client page with upcoming/past jobs, client folder, Schedule job (client pre-filled)
+- [x] Client chip on a job opens that client; search covers client folders
 
 ### Phase 5: Optional add-ons
 - [ ] Plain-English job entry (Claude API via a small serverless function)
@@ -397,8 +411,8 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 |-------|---------------------|
 | Hosting | **GitHub Pages on a free plan requires the repo to be public.** The code contains no secrets, so a public repo is safe. If you'd rather keep it private, use **Cloudflare Pages** (free, works with private repos) or GitHub Pro. → *Pick one before Phase 0.* |
 | Account type | Personal Microsoft account (@outlook.com) → registration for *Personal Microsoft accounts only*, `VITE_TENANT_ID=consumers`. |
-| Where job files live | Default: your OneDrive under `View/Jobs`. If your team keeps job files in a shared SharePoint or Teams library, that can be supported instead. → *Confirm.* |
-| Folder naming | Default `YYYY-MM-DD - Customer - Title`. → *Change if you have an existing convention.* |
+| Where job files live | Your OneDrive under `View/Clients/<client>/<job>`. |
+| Folder naming | Client folder → job folder named after the job (no dates). |
 | Which calendar | Default: your primary Outlook calendar. Other or shared calendars can be added. |
 | Time zone | Taken from your Outlook mailbox settings; can be overridden in Settings. |
 

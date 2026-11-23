@@ -15,7 +15,9 @@ export function JobSection({
   onRemoveLink,
   onStatus,
   onRemoveJob,
+  onOpenClient,
 }: {
+  onOpenClient: (client: string) => void
   /** undefined = still loading */
   job: JobInfo | null | undefined
   editable: boolean
@@ -66,7 +68,16 @@ export function JobSection({
       <div className="mb-3 flex items-center gap-2">
         <Icon name="briefcase" className="h-5 w-5 text-brand" />
         <h3 className="flex-1 font-semibold">Job {job.jobId}</h3>
-        {job.customer && <span className="truncate text-sm text-muted">{job.customer}</span>}
+        {job.customer && (
+          <button
+            type="button"
+            onClick={() => onOpenClient(job.customer)}
+            className="flex min-w-0 items-center gap-1 truncate rounded-full bg-surface-2 px-2.5 py-1 text-sm active:bg-line"
+          >
+            <Icon name="person" className="h-3.5 w-3.5 shrink-0 text-muted" />
+            <span className="truncate">{job.customer}</span>
+          </button>
+        )}
       </div>
 
       <div className="mb-3 flex gap-1 overflow-x-auto pb-1" role="radiogroup" aria-label="Job status">
