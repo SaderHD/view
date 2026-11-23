@@ -178,10 +178,23 @@ async function driveRoute(p: string, method: string, url: URL, init: RequestInit
     })
     return itemToGraph(it)
   }
+  const inFolder = /^\/drives\/[^/]+\/items\/([^/]+)\/search\(q='(.*)'\)$/.exec(p)
+  if (inFolder) {
+    const q = decodeURIComponent(inFolder[2]).toLowerCase()
+    const under = (it: FakeItem): boolean => it.parentId === inFolder[1] || (!!it.parentId && under(items.find((x) => x.id === it.parentId)!))
+    return { value: items.filter((i) => i.parentId !== null && under(i) && i.name.toLowerCase().includes(q)).map(itemToGraph) }
+  }
   const m = /^\/drives\/[^/]+\/items\/([^/]+)(\/children)?$/.exec(p)
   if (m) {
     const it = items.find((i) => i.id === decodeURIComponent(m[1]))
     if (!it) throw new GraphError(404, 'itemNotFound', 'The resource could not be found.')
+    if (!m[2] && method === 'PATCH') {
+      const b = JSON.parse(String(init.body)) as { name: string }
+      if (items.some((c) => c.parentId === it.parentId && c.id !== it.id && c.name.toLowerCase() === b.name.toLowerCase()))
+        throw new GraphError(409, 'nameAlreadyExists', 'Name already exists')
+      it.name = b.name
+      return itemToGraph(it)
+    }
     if (!m[2]) return itemToGraph(it)
     if (method === 'POST') {
       const b = JSON.parse(String(init.body)) as { name: string; '@microsoft.graph.conflictBehavior'?: string }

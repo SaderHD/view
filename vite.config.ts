@@ -10,8 +10,21 @@ const base = process.env.BASE_PATH ?? '/'
 // https://vite.dev/config/
 export default defineConfig({
   base,
-  // The Microsoft sign-in library (MSAL) alone is ~350 kB; that's expected.
-  build: { chunkSizeWarningLimit: 800 },
+  build: {
+    // Big libraries go in their own files. They rarely change, so after an app
+    // update the phone only re-downloads the (small) app code.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'msal', test: /node_modules[\\/]@azure[\\/]/, priority: 3 },
+            { name: 'calendar', test: /node_modules[\\/]@fullcalendar[\\/]/, priority: 2 },
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 1 },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

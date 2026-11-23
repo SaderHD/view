@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon, Sheet } from '../components/Sheet'
 import { createFolder, listChildren, toRef, type DriveItem, type DriveRef } from '../graph/drive'
+import { haptic } from '../lib/haptics'
 import { enqueue, useOnUploaded, useUploadQueue } from '../uploads/queue'
 import { formatSize } from '../uploads/format'
 import { UploadButtons, type PickedFile } from '../uploads/UploadButtons'
@@ -55,6 +56,7 @@ export function FilesSheet({ root, title, onClose }: { root: DriveRef; title: st
   function upload(files: PickedFile[]) {
     const label = path.length > 1 ? `${title} › ${path.slice(1).map((p) => p.name).join(' › ')}` : title
     void enqueue(files, { driveId: current.driveId, parentId: current.itemId, label })
+    haptic()
   }
 
   async function addFolder() {

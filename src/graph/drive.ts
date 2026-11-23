@@ -87,13 +87,43 @@ export async function listChildren(driveId: string, itemId: string): Promise<Dri
   return out.sort((a, b) => Number(b.isFolder) - Number(a.isFolder) || a.name.localeCompare(b.name))
 }
 
-/** Search your whole OneDrive by name/content. */
-export async function searchDrive(query: string): Promise<DriveItem[]> {
-  const q = query.replace(/'/g, "''")
-  const res = await graph<{ value: GraphDriveItem[] }>(
-    `/me/drive/root/search(q='${encodeURIComponent(q)}')?$select=${SELECT}&$top=50`,
-  )
-  return res.value.map((g) => toItem(g))
+/**
+ * Search by name/content: your whole OneDrive, or only inside one folder
+ * (e.g. View/Jobs).
+ */
+export async function searchDrive(query: string, within?: { driveId: string; itemId: string }): Promise<DriveItem[]> {
+  const q = encodeURIComponent(query.replace(/'/g, "''"))
+  const base = within ? itemPath(within.driveId, within.itemId) : '/me/drive/root'
+  const res = await graph<{ value: GraphDriveItem[] }>(`${base}/search(q='${q}')?$select=${SELECT}&$top=50`)
+  return res.value.map((g) => toItem(g, within?.driveId))
+}
+
+/** Find a folder by path under your OneDrive root without creating it (null if missing). */
+export async function findFolder(segments: string[]): Promise<DriveItem | null> {
+  try {
+    const path = segments.map(encodeURIComponent).join('/')
+    return toItem(await graph<GraphDriveItem>(`/me/drive/root:/${path}?$select=${SELECT}`))
+  } catch (err) {
+    if (err instanceof GraphError && err.status === 404) return null
+    throw err
+  }
+}
+
+/** Rename a file or folder. If the name is taken, adds " (2)", " (3)"… */
+export async function renameItem(driveId: string, itemId: string, name: string): Promise<DriveItem> {
+  const base = safeName(name)
+  for (let n = 1; n <= 5; n++) {
+    try {
+      const res = await graph<GraphDriveItem>(itemPath(driveId, itemId), {
+        method: 'PATCH',
+        body: JSON.stringify({ name: n === 1 ? base : `${base} (${n})` }),
+      })
+      return toItem(res, driveId)
+    } catch (err) {
+      if (!(err instanceof GraphError) || err.status !== 409) throw err
+    }
+  }
+  throw new GraphError(409, 'nameAlreadyExists', `A folder named "${base}" already exists`)
 }
 
 /** OneDrive doesn't allow  " * : < > ? / \ |  or trailing dots/spaces in names. */

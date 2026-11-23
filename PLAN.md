@@ -366,10 +366,14 @@ Step-by-step instructions: [docs/SETUP.md](docs/SETUP.md).
 - **Milestone:** type a job, get the best open times based on that week's hours.
 
 ### Phase 4: Search and polish
-- [ ] Unified search (events + files)
-- [ ] Job statuses and filters
-- [ ] Folder rename when a job moves
-- [ ] Dark mode, haptics, speed tuning
+- [x] Unified search: title, customer, address, notes, job number, status (six months back to a year ahead,
+      searched on the phone so it also works offline) plus OneDrive file search (job folders or all OneDrive)
+- [x] Job list ("All jobs") with status and upcoming/past filters; done/invoiced jobs show ✓ on the calendar
+- [x] Moving a job to another date offers to rename its folder's date prefix
+- [x] Dark mode, haptic feedback on key actions
+- [x] Speed: libraries split into separately cached files (app code ~48 KB), rarely used screens load on demand,
+      early connection to Microsoft servers
+- **Milestone:** find any job, customer or file in a couple of taps.
 
 ### Phase 5: Optional add-ons
 - [ ] Plain-English job entry (Claude API via a small serverless function)
