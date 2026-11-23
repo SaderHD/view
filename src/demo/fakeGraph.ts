@@ -74,6 +74,7 @@ interface FakeItem {
   mime: string
   thumb: string | null
   modified: string
+  text?: string
 }
 const DRIVE = 'demo-drive'
 const items: FakeItem[] = []
@@ -121,6 +122,7 @@ const itemToGraph = (it: FakeItem) => ({
   ...(it.isFolder ? { folder: { childCount: items.filter((c) => c.parentId === it.id).length } } : { file: { mimeType: it.mime } }),
   parentReference: { driveId: DRIVE },
   thumbnails: it.thumb ? [{ medium: { url: it.thumb } }] : [],
+  ...(it.text !== undefined ? { '@microsoft.graph.downloadUrl': `data:application/json,${encodeURIComponent(it.text)}` } : {}),
 })
 const byPath = (segments: string[]) => {
   let cur: FakeItem | undefined = root
@@ -141,6 +143,19 @@ function uniqueName(parentId: string, name: string, behavior: string): string {
 
 async function driveRoute(p: string, method: string, url: URL, init: RequestInit): Promise<unknown> {
   if (p === '/me/drive/root') return itemToGraph(root)
+  const putByPath = /^\/me\/drive\/root:\/(.+):\/content$/.exec(p)
+  if (putByPath && method === 'PUT') {
+    const segs = putByPath[1].split('/').map(decodeURIComponent)
+    const parent = byPath(segs.slice(0, -1))
+    if (!parent) throw new GraphError(404, 'itemNotFound', 'Parent folder not found')
+    const name = segs[segs.length - 1]
+    const existing = items.find((c) => c.parentId === parent.id && c.name === name)
+    const it = existing ?? addItem(parent.id, name, false, { mime: 'application/json' })
+    it.text = String(init.body)
+    it.size = it.text.length
+    it.modified = new Date().toISOString()
+    return itemToGraph(it)
+  }
   if (p.startsWith('/me/drive/root:/')) {
     const it = byPath(p.slice('/me/drive/root:/'.length).split('/').map(decodeURIComponent))
     if (!it) throw new GraphError(404, 'itemNotFound', 'The resource could not be found.')

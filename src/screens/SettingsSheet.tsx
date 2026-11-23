@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { signOut } from '../auth/msal'
-import { Sheet } from '../components/Sheet'
+import { Icon, Sheet } from '../components/Sheet'
 import { runConnectionCheck, type CheckResult, type ConnectionReport } from '../graph/connectionCheck'
 import { clearCache } from '../storage/eventCache'
 
@@ -8,10 +8,12 @@ export function SettingsSheet({
   name,
   username,
   onClose,
+  onOpenHours,
 }: {
   name: string
   username: string
   onClose: () => void
+  onOpenHours: () => void
 }) {
   const [report, setReport] = useState<ConnectionReport | null>(null)
   const [running, setRunning] = useState(true)
@@ -44,6 +46,19 @@ export function SettingsSheet({
         <p className="font-medium">{name}</p>
         <p className="text-sm text-muted">{username}</p>
       </section>
+
+      <button
+        type="button"
+        onClick={onOpenHours}
+        className="mb-5 flex w-full items-center gap-3 rounded-xl border border-line p-3 text-left active:bg-surface-2"
+      >
+        <Icon name="clock" className="h-5 w-5 text-brand" />
+        <span className="flex-1">
+          <span className="block font-medium">Work hours & scheduling</span>
+          <span className="block text-sm text-muted">Your hours week by week, buffers, limits</span>
+        </span>
+        <Icon name="chevronRight" className="h-4 w-4 text-muted" />
+      </button>
 
       <section className="mb-5 rounded-xl border border-line p-3">
         <div className="mb-1 flex items-center justify-between">

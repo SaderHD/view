@@ -103,11 +103,11 @@ export async function createJobFolder(name: string): Promise<DriveRef> {
  */
 export async function makeJob(
   event: CalEvent,
-  options: { customer: string; existingFolder?: DriveRef },
+  options: { customer: string; existingFolder?: DriveRef; jobId?: string },
 ): Promise<{ job: JobInfo; categories: string[] }> {
   const folder = options.existingFolder ?? (await createJobFolder(jobFolderName(event, options.customer)))
   const job: JobInfo = {
-    jobId: newJobId(toDate(event.start)),
+    jobId: options.jobId ?? newJobId(toDate(event.start)),
     customer: options.customer.trim(),
     status: 'scheduled',
     folder,

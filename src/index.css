@@ -128,3 +128,11 @@ code {
 .fc .fc-event.ev-tentative:not(.fc-daygrid-dot-event):not(.fc-list-event) {
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.18) 6px 12px);
 }
+
+/* ── Outside work hours ─────────────────────────────────── */
+.fc .fc-bg-event.off-hours,
+.fc .fc-bg-event.off-day {
+  background: repeating-linear-gradient(135deg, var(--color-surface-2) 0 6px, transparent 6px 12px);
+  opacity: 1;
+}
+.fc .fc-daygrid-day .fc-bg-event.off-day { opacity: 0.8; }
