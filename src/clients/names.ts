@@ -7,6 +7,12 @@ export function normalizeClientName(name: string): string {
   return trimmed ? safeName(trimmed) : GENERAL_CLIENT
 }
 
+/** Use an existing entry's exact spelling if `name` matches one ignoring case and extra spaces. */
+export function matchName(name: string, list: string[]): string {
+  const key = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  return list.find((c) => key(c) === key(name)) ?? name.trim().replace(/\s+/g, ' ')
+}
+
 /**
  * Use the existing client's exact spelling if the typed name matches one
  * (ignoring case and extra spaces), so "x water co" doesn't create a second folder.

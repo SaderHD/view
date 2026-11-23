@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { CitiesInput } from '../clients/CityPicker'
 import { ClientPicker } from '../clients/ClientPicker'
 import { Sheet } from '../components/Sheet'
 import { SHOW_AS_LABEL } from './eventDisplay'
@@ -63,12 +64,14 @@ export function EventForm({
   notesEditable?: boolean
   onClose: () => void
   /** Resolves when saved; rejects with an error to show. jobOptions is set when "This is a job" is on. */
-  onSave: (draft: EventDraft, notesChanged: boolean, jobOptions?: { client: string }) => Promise<void>
+  onSave: (draft: EventDraft, notesChanged: boolean, jobOptions?: { client: string; cities: string[] }) => Promise<void>
 }) {
   const [form, setForm] = useState<FormState>(() => fromDraft(initial))
   const [saving, setSaving] = useState(false)
   const [isJob, setIsJob] = useState(false)
   const [client, setClient] = useState('')
+  const [cities, setCities] = useState<string[]>([''])
+  const filledCities = cities.map((c) => c.trim()).filter(Boolean)
   const [error, setError] = useState<string | null>(null)
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }))
@@ -94,7 +97,9 @@ export function EventForm({
     setSaving(true)
     setError(null)
     try {
-      await onSave(draft, form.notes !== initial.notes, mode === 'new' && isJob ? { client } : undefined)
+      // A job's location is its city (or cities, in order).
+      const toSave = mode === 'new' && isJob && filledCities.length ? { ...draft, location: filledCities.join(' → ') } : draft
+      await onSave(toSave, form.notes !== initial.notes, mode === 'new' && isJob ? { client, cities: filledCities } : undefined)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setSaving(false)
@@ -168,6 +173,9 @@ export function EventForm({
             {isJob && (
               <div className="border-t border-line px-3 py-2.5">
                 <ClientPicker value={client} onChange={setClient} />
+                <div className="mt-3">
+                  <CitiesInput cities={cities} onChange={setCities} />
+                </div>
               </div>
             )}
           </div>
@@ -221,15 +229,17 @@ export function EventForm({
           </div>
         </Field>
 
-        <Field label="Location">
-          <input
-            className={input}
-            placeholder="Address or place"
-            value={form.location}
-            onChange={(e) => set('location', e.target.value)}
-            autoComplete="street-address"
-          />
-        </Field>
+        {!(mode === 'new' && isJob) && (
+          <Field label="Location">
+            <input
+              className={input}
+              placeholder="Address or place"
+              value={form.location}
+              onChange={(e) => set('location', e.target.value)}
+              autoComplete="street-address"
+            />
+          </Field>
+        )}
 
         <Field label="Show as">
           <select className={input} value={form.showAs} onChange={(e) => set('showAs', e.target.value as ShowAs)}>

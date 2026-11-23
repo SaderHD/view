@@ -79,6 +79,12 @@ export function JobSection({
           </button>
         )}
       </div>
+      {job.cities.length > 0 && (
+        <p className="-mt-1 mb-3 flex items-center gap-1.5 text-sm text-muted">
+          <Icon name="pin" className="h-3.5 w-3.5 shrink-0" />
+          {job.cities.join(' → ')}
+        </p>
+      )}
 
       <div className="mb-3 flex gap-1 overflow-x-auto pb-1" role="radiogroup" aria-label="Job status">
         {JOB_STATUSES.map((s) => (

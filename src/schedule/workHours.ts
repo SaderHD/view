@@ -37,6 +37,8 @@ export interface Settings {
   /** Keyed by the week's Sunday ("YYYY-MM-DD"). Only days that differ are stored. */
   weekOverrides: Record<string, Partial<Week>>
   scheduling: SchedulingRules
+  /** Cities you've used for jobs: the City box suggests these (and only these). */
+  cities: string[]
 }
 
 const weekday = (): Block[] => [['07:00', '15:30']]
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   presets: {},
   weekOverrides: {},
   scheduling: { bufferMinutes: 30, maxJobHoursPerDay: 9, lookaheadDays: 21 },
+  cities: [],
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -183,6 +186,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     presets: r.presets && typeof r.presets === 'object' ? r.presets : {},
     weekOverrides: r.weekOverrides && typeof r.weekOverrides === 'object' ? r.weekOverrides : {},
     scheduling: { ...DEFAULT_SETTINGS.scheduling, ...(r.scheduling ?? {}) },
+    cities: Array.isArray(r.cities) ? r.cities.filter((c): c is string => typeof c === 'string' && c.trim() !== '') : [],
   }
 }
 

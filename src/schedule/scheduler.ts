@@ -18,8 +18,8 @@ export interface JobRequest {
   /** Allow splitting a long job across several days. */
   allowSplit: boolean
   urgent: boolean
-  /** Used to find days with jobs nearby. */
-  location: string
+  /** Cities the job is in; used to prefer days with other jobs in the same city. */
+  cities: string[]
 }
 
 export interface Slot {
@@ -46,9 +46,21 @@ const MIN_PIECE = 60 * MIN
 const isBlocking = (e: CalEvent) => !e.isCancelled && e.showAs !== 'free'
 const isJobEvent = (e: CalEvent) => !!e.job || e.categories.some((c) => c.toLowerCase() === 'job')
 
-/** Pull a 5-digit ZIP (or postcode-ish token) out of an address. */
-export function zipOf(location: string): string | null {
-  return /\b(\d{5})(?:-\d{4})?\b/.exec(location)?.[1] ?? null
+const cityKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+
+/** Cities an existing event is in: its job's cities, else its location text. */
+function citiesOf(e: CalEvent): string[] {
+  if (e.job?.cities.length) return e.job.cities.map(cityKey)
+  return e.location
+    .split(/→|,|;/)
+    .map(cityKey)
+    .filter(Boolean)
+}
+
+/** The first of `cities` that `e` is also in, if any. */
+export function sharedCity(cities: string[], e: CalEvent): string | null {
+  const theirs = citiesOf(e)
+  return cities.find((c) => c.trim() && theirs.includes(cityKey(c))) ?? null
 }
 
 /** Remove `cuts` from `base` intervals. */
@@ -133,7 +145,6 @@ export function suggestSlots(
 
   const info = freeTimeByDay(events, settings, from, days, now)
   const maxJob = settings.scheduling.maxJobHoursPerDay * 60
-  const zip = zipOf(req.location)
   const perDayPenalty = req.urgent ? 8 : 2
 
   const singles: Suggestion[] = []
@@ -173,11 +184,11 @@ export function suggestSlots(
         score -= (day.busyMinutes / 60) * 0.75
         if (day.busyMinutes === 0) reasons.push('Open day')
 
-        // Same area as another job that day = less driving.
-        if (zip && day.dayJobs.some((j) => zipOf(j.location) === zip)) {
+        // Another job in the same city that day = less driving.
+        const near = day.dayJobs.find((j) => sharedCity(req.cities, j))
+        if (near) {
           score += 6
-          const near = day.dayJobs.find((j) => zipOf(j.location) === zip)!
-          reasons.push(`Near "${near.title}" (same ZIP)`)
+          reasons.push(`Same city as "${near.title}"`)
         }
 
         if (day.index === 0 && !reasons.includes('Earliest')) reasons.unshift('Earliest')
@@ -238,6 +249,47 @@ function splitSuggestions(req: JobRequest, info: DayInfo[], maxJobMinutes: numbe
     // Next suggestion should start on a later day than this one.
     const lastFirstDay = info.findIndex((d) => d.date.toDateString() === slots[0].start.toDateString())
     first = Math.max(first, lastFirstDay)
+  }
+  return out
+}
+
+// ── Multi-location jobs ──────────────────────────────────────────────────────
+
+export interface Stop {
+  city: string
+  minutes: number
+}
+
+export interface StopSegment {
+  stopIndex: number
+  city: string
+  start: Date
+  end: Date
+}
+
+/**
+ * Lay a job's stops out back to back over the booked slot(s): the first stop
+ * from the start, the next right after it, and so on. If the job was split
+ * across days, a stop that doesn't fit in what's left of one slot continues
+ * in the next.
+ */
+export function allocateStops(slots: Slot[], stops: Stop[]): StopSegment[] {
+  const out: StopSegment[] = []
+  let i = 0
+  let left = (stops[0]?.minutes ?? 0) * MIN
+  for (const slot of slots) {
+    let t = slot.start.getTime()
+    const end = slot.end.getTime()
+    while (t < end && i < stops.length) {
+      const len = Math.min(left, end - t)
+      if (len > 0) out.push({ stopIndex: i, city: stops[i].city.trim(), start: new Date(t), end: new Date(t + len) })
+      t += len
+      left -= len
+      if (left <= 0) {
+        i++
+        left = (stops[i]?.minutes ?? 0) * MIN
+      }
+    }
   }
   return out
 }

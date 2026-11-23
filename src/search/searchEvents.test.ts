@@ -26,7 +26,7 @@ function ev(dayOffset: number, title: string, extra: Partial<CalEvent> = {}): Ca
     ...extra,
   }
 }
-const job = (j: Partial<JobInfo>): JobInfo => ({ jobId: 'J-1', customer: '', status: 'scheduled', folder: null, links: [], ...j })
+const job = (j: Partial<JobInfo>): JobInfo => ({ jobId: 'J-1', customer: '', cities: [], status: 'scheduled', folder: null, links: [], ...j })
 const all: EventFilters = { jobsOnly: false, status: null, when: 'all' }
 
 const events = [

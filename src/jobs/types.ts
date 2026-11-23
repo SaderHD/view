@@ -19,6 +19,12 @@ export interface JobInfo {
   /** The client's name (stored as "customer" for compatibility). Matches its folder under View/Clients. */
   customer: string
   status: JobStatus
+  /**
+   * Cities the job takes place in, in visiting order. A job can cover several
+   * locations of the same client (e.g. clean Austin, then Dallas). The job's
+   * folder lives under the first city.
+   */
+  cities: string[]
   /** The job's OneDrive folder. */
   folder: DriveRef | null
   /** Extra OneDrive files/folders attached to the job (left where they are). */
@@ -29,8 +35,9 @@ export interface JobInfo {
 export const JOB_SUBFOLDERS = ['Reports', 'Receipts', 'Photos']
 
 /**
- * Where client folders live in your OneDrive. Each job gets a folder inside
- * its client's folder: View/Clients/<client>/<job title>/
+ * Where client folders live in your OneDrive. Jobs are organized by client,
+ * then city: View/Clients/<client>/<city>/<job title>/
+ * (no city → View/Clients/<client>/<job title>/)
  */
 export const CLIENTS_ROOT = ['View', 'Clients']
 
